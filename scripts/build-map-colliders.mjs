@@ -35,7 +35,9 @@ const PROPS_DIR = join(ASSETS_DIR, 'props');
 const CELL_SIZE = 1.0; // metres per voxel
 const MAX_TRI_SAMPLES = 64; // per-triangle surface sampling cap
 const SPAWN_HEADROOM = 4; // empty cells required above a spawn floor
-const PLAY_HEIGHT_CAP = 36; // metres of collision above the floor (bounds the grid)
+const PLAY_HEIGHT_CAP = 36; // metres of collision above the floor (the STORED grid)
+const SPAWN_ANALYSIS_CAP = 200; // metres analysed (build-time only) to find open sky
+const OPEN_SKY_GAP = 8; // a spawn column must have NO geometry above floor+this
 const MAP_TARGET_SIZE = 250; // scale oversized maps so their footprint ≈ this
 const MAP_SCALE_THRESHOLD = 400; // only rescale maps bigger than this
 const PROP_TARGET_SIZE = 4.6; // scale a prop so its footprint ≈ this (≈ a car)
@@ -208,25 +210,29 @@ async function processMap(id, folder, props = {}) {
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   for (const n of scene.listChildren()) walk(n, identity);
 
-  // 3) Voxelise into a solid grid. Height is capped to PLAY_HEIGHT_CAP above the
-  //    floor (bounds the grid for tall maps; collision only matters near the
-  //    ground).
+  // 3) Voxelise into a solid grid. We voxelise a TALL grid (up to
+  //    SPAWN_ANALYSIS_CAP) so we can tell which floor columns are genuinely open
+  //    to the sky vs. sitting under the map's high walls/overhangs — crucial for
+  //    spawn placement on big arenas. The STORED grid (used at runtime) is just
+  //    the bottom PLAY_HEIGHT_CAP layers, so colliders.json stays small.
   const groundY = min[1];
   const origin = [min[0], groundY, min[2]];
   const playH = Math.min(PLAY_HEIGHT_CAP, max[1] - groundY);
+  const analysisH = Math.min(SPAWN_ANALYSIS_CAP, max[1] - groundY);
   const nx = Math.max(1, Math.ceil((max[0] - min[0]) / CELL_SIZE));
-  const ny = Math.max(1, Math.ceil(playH / CELL_SIZE));
+  const ny = Math.max(1, Math.ceil(playH / CELL_SIZE)); // stored height
+  const nyA = Math.max(ny, Math.ceil(analysisH / CELL_SIZE)); // analysis height
   const nz = Math.max(1, Math.ceil((max[2] - min[2]) / CELL_SIZE));
-  const solid = new Uint8Array(nx * ny * nz);
-  const yTop = groundY + playH;
+  const solidA = new Uint8Array(nx * nyA * nz); // tall, build-time analysis grid
+  const yTopA = groundY + nyA * CELL_SIZE;
 
   const markPoint = (x, y, z) => {
-    if (y < groundY || y > yTop) return;
+    if (y < groundY || y > yTopA) return;
     const ix = Math.floor((x - origin[0]) / CELL_SIZE);
     const iy = Math.floor((y - origin[1]) / CELL_SIZE);
     const iz = Math.floor((z - origin[2]) / CELL_SIZE);
-    if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return;
-    solid[(iy * nz + iz) * nx + ix] = 1;
+    if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= nyA || iz >= nz) return;
+    solidA[(iy * nz + iz) * nx + ix] = 1;
   };
 
   for (let t = 0; t < triangles.length; t += 3) {
@@ -252,6 +258,9 @@ async function processMap(id, folder, props = {}) {
     }
   }
 
+  // The stored grid is the bottom `ny` layers of the analysis grid (identical
+  // linear layout, since nx/nz match), so runtime collision is unchanged.
+  const solid = solidA.slice(0, nx * ny * nz);
   let solidCount = 0;
   for (const v of solid) solidCount += v;
 
@@ -259,21 +268,32 @@ async function processMap(id, folder, props = {}) {
   //    clearance above it, then spawn in the largest, most-open area. Players
   //    spawn ON the floor (works for raised/uneven floors, not just y=0). Both
   //    teams share the same Z line: teammates clustered, enemies offset in X.
+  const cellA = (ix, iy, iz) => solidA[(iy * nz + iz) * nx + ix];
   const columnInfo = (ix, iz) => {
     let floorIy = -1;
-    for (let iy = 0; iy < ny; iy++) {
-      if (solid[(iy * nz + iz) * nx + ix]) {
+    for (let iy = 0; iy < nyA; iy++) {
+      if (cellA(ix, iy, iz)) {
         floorIy = iy;
         break;
       }
     }
     if (floorIy < 0) return null; // no floor in this column
+    // Contiguous open cells directly above the floor (player headroom).
     let h = 0;
-    for (let iy = floorIy + 1; iy < ny; iy++) {
-      if (solid[(iy * nz + iz) * nx + ix]) break;
+    for (let iy = floorIy + 1; iy < nyA; iy++) {
+      if (cellA(ix, iy, iz)) break;
       h++;
     }
-    return { floorIy, h };
+    // Open to sky: NO geometry anywhere above floor+OPEN_SKY_GAP, all the way up
+    // (i.e. not tucked under the map's tall walls / overhangs).
+    let openToSky = true;
+    for (let iy = floorIy + 1 + OPEN_SKY_GAP; iy < nyA; iy++) {
+      if (cellA(ix, iy, iz)) {
+        openToSky = false;
+        break;
+      }
+    }
+    return { floorIy, h, openToSky };
   };
   const all = [];
   for (let iz = 0; iz < nz; iz++) {
@@ -284,13 +304,17 @@ async function processMap(id, folder, props = {}) {
         ix,
         iz,
         h: info.h,
+        openToSky: info.openToSky,
         y: origin[1] + (info.floorIy + 1) * CELL_SIZE,
         x: origin[0] + (ix + 0.5) * CELL_SIZE,
         z: origin[2] + (iz + 0.5) * CELL_SIZE,
       });
     }
   }
-  const candidates = all.filter((p) => p.h >= SPAWN_HEADROOM);
+  // Prefer floor columns that are open to the sky AND have player headroom. Fall
+  // back to clearance-only for fully-enclosed maps (e.g. indoor levels).
+  const skyOpen = all.filter((p) => p.openToSky && p.h >= SPAWN_HEADROOM);
+  const candidates = skyOpen.length ? skyOpen : all.filter((p) => p.h >= SPAWN_HEADROOM);
   const pool = candidates.length ? candidates : all;
 
   // Pick the coarse region whose columns have the most total clearance (biggest,
@@ -356,6 +380,7 @@ async function processMap(id, folder, props = {}) {
   const onFloor = all.filter(
     (p) =>
       p.h >= 2 &&
+      p.openToSky &&
       Math.abs(p.y - spawnFloorY) < 1.5 &&
       spawnPts.every((s) => Math.hypot(s.x - p.x, s.z - p.z) > MIN_SPAWN_DIST),
   );
