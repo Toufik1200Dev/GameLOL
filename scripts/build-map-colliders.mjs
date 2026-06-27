@@ -374,7 +374,7 @@ async function processMap(id, folder, props = {}) {
   const propColliders = [];
   const propInstances = [];
   const placed = [];
-  const MIN_GAP = 9; // minimum spacing between two cars (metres)
+  const MIN_GAP = 7; // minimum spacing between two cars (metres)
   for (const spec of cfg.props ?? []) {
     const prop = props[spec.id];
     if (!prop) {

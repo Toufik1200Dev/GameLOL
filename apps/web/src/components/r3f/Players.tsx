@@ -108,11 +108,14 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
     if (!g) return;
     g.visible = !controls.firstPerson;
     g.position.set(client.render.position.x, client.render.position.y, client.render.position.z);
-    // Turn the body toward the movement direction; face aim when standing still.
+    // Turn the body toward the movement direction while moving, and HOLD that
+    // facing when standing still (don't snap back to the aim/forward direction).
     const v = client.predicted.velocity;
     const speed = Math.hypot(v.x, v.z);
-    const targetYaw = speed > 1.2 ? Math.atan2(-v.x, -v.z) : client.render.yaw;
-    g.rotation.y = lerpAngle(g.rotation.y, targetYaw, 1 - Math.exp(-12 * dt));
+    if (speed > 1.2) {
+      const targetYaw = Math.atan2(-v.x, -v.z);
+      g.rotation.y = lerpAngle(g.rotation.y, targetYaw, 1 - Math.exp(-12 * dt));
+    }
   });
 
   return (
@@ -146,15 +149,17 @@ function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
     }
     g.visible = true;
     g.position.set(s.x, s.y, s.z);
-    // Face the interpolated movement direction; fall back to aim yaw when still.
-    let targetYaw = s.yaw;
+    // Face the interpolated movement direction; HOLD the last facing when still
+    // (don't rotate back to the aim/forward direction).
     if (last.current) {
       const dx = s.x - last.current.x;
       const dz = s.z - last.current.z;
-      if (Math.hypot(dx, dz) > 0.02) targetYaw = Math.atan2(-dx, -dz);
+      if (Math.hypot(dx, dz) > 0.02) {
+        const targetYaw = Math.atan2(-dx, -dz);
+        g.rotation.y = lerpAngle(g.rotation.y, targetYaw, 1 - Math.exp(-12 * dt));
+      }
     }
     last.current = { x: s.x, z: s.z };
-    g.rotation.y = lerpAngle(g.rotation.y, targetYaw, 1 - Math.exp(-12 * dt));
   });
 
   const team = meta?.team ?? 'blue';

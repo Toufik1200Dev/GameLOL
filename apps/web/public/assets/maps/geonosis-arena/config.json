@@ -4,5 +4,5 @@
   "skyColor": "#caa46a",
   "fogColor": "#b98f57",
   "propDensity": 0,
-  "props": [{ "id": "bmw-m4", "count": 5 }]
+  "props": [{ "id": "bmw-m4", "count": 16 }]
 }
