@@ -25,6 +25,7 @@ interface GameStore {
   ammo: number;
   magazine: number;
   reloading: boolean;
+  weaponName: string;
 
   kills: number;
   deaths: number;
@@ -67,6 +68,7 @@ const initial = {
   ammo: 30,
   magazine: 30,
   reloading: false,
+  weaponName: 'Rifle',
   kills: 0,
   deaths: 0,
   scores: { red: 0, blue: 0 } as Record<TeamId, number>,

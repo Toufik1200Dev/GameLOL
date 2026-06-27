@@ -152,6 +152,7 @@ export function HUD({ worldSize }: { worldSize: number }) {
   const ammo = useGameStore((s) => s.ammo);
   const magazine = useGameStore((s) => s.magazine);
   const reloading = useGameStore((s) => s.reloading);
+  const weaponName = useGameStore((s) => s.weaponName);
   const kills = useGameStore((s) => s.kills);
   const deaths = useGameStore((s) => s.deaths);
   const fps = useGameStore((s) => s.fps);
@@ -201,7 +202,7 @@ export function HUD({ worldSize }: { worldSize: number }) {
             <span className="ml-1 text-lg text-white/40">/ {magazine}</span>
           </div>
           <div className="text-xs uppercase tracking-wide text-white/40">
-            {reloading ? 'reloading…' : 'rifle'}
+            {reloading ? 'reloading…' : weaponName}
           </div>
         </div>
       </div>

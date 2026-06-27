@@ -98,21 +98,27 @@ async function processMap(id, folder) {
   console.log(`[map] ${id}: reading map.glb`);
   const doc = await io.read(glbPath);
 
-  // 1) Clean + compress (materials, textures, and Draco geometry compression —
-  //    drei's useGLTF decodes Draco automatically on the client).
-  const sharp = await loadSharp();
-  const transforms = [metalRough(), dedup(), prune()];
-  if (sharp) {
-    transforms.push(
-      textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [1024, 1024] }),
-    );
+  // 1) Clean + compress (materials, textures, Draco geometry) — but only on the
+  //    first pass. Once processed the GLB is small, so re-runs (e.g. to retune
+  //    collision/spawns) skip this and stay fast + idempotent.
+  const sizeMB = statSync(glbPath).size / (1024 * 1024);
+  if (sizeMB > 40) {
+    const sharp = await loadSharp();
+    const transforms = [metalRough(), dedup(), prune()];
+    if (sharp) {
+      transforms.push(
+        textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [1024, 1024] }),
+      );
+    } else {
+      console.warn('[map] sharp not available — skipping texture compression');
+    }
+    transforms.push(weld(), draco());
+    await doc.transform(...transforms);
+    await io.write(glbPath, doc);
+    console.log(`[map] ${id}: cleaned + compressed map.glb written`);
   } else {
-    console.warn('[map] sharp not available — skipping texture compression');
+    console.log(`[map] ${id}: map.glb already processed (${sizeMB.toFixed(1)}MB) — skipping clean`);
   }
-  transforms.push(weld(), draco());
-  await doc.transform(...transforms);
-  await io.write(glbPath, doc);
-  console.log(`[map] ${id}: cleaned map.glb written`);
 
   // 2) Gather world-space triangles + overall bounds.
   const root = doc.getRoot();
@@ -211,17 +217,48 @@ async function processMap(id, folder) {
   let solidCount = 0;
   for (const v of solid) solidCount += v;
 
-  // 4) Spawns: two teams at opposite Z ends, inset, on the floor.
-  const cx = (min[0] + max[0]) / 2;
-  const inset = (max[2] - min[2]) * 0.12;
-  const spawnZRed = min[2] + inset;
-  const spawnZBlue = max[2] - inset;
-  const spawns = { red: [], blue: [] };
-  for (let i = 0; i < 4; i++) {
-    const ox = (i - 1.5) * 4;
-    spawns.red.push({ position: { x: cx + ox, y: groundY, z: spawnZRed }, yaw: 0 });
-    spawns.blue.push({ position: { x: cx + ox, y: groundY, z: spawnZBlue }, yaw: Math.PI });
-  }
+  // 4) Spawns: pick OPEN floor columns (clear headroom above the floor) on each
+  //    half so players never spawn inside the surrounding buildings.
+  const headroom = Math.max(2, Math.ceil(2.4 / CELL_SIZE));
+  const openColumn = (ix, iz) => {
+    for (let iy = 0; iy < headroom; iy++) {
+      if (solid[(iy * nz + iz) * nx + ix]) return false;
+    }
+    return true;
+  };
+  const collectOpen = (izStart, izEnd) => {
+    const pts = [];
+    for (let iz = izStart; iz < izEnd; iz++) {
+      for (let ix = Math.floor(nx * 0.15); ix < Math.floor(nx * 0.85); ix++) {
+        if (openColumn(ix, iz)) {
+          pts.push({
+            x: origin[0] + (ix + 0.5) * CELL_SIZE,
+            z: origin[2] + (iz + 0.5) * CELL_SIZE,
+          });
+        }
+      }
+    }
+    return pts;
+  };
+  const cxWorld = (min[0] + max[0]) / 2;
+  const czWorld = (min[2] + max[2]) / 2;
+  const pickSpread = (pts, yaw) => {
+    if (pts.length === 0) {
+      return [{ position: { x: cxWorld, y: groundY + 0.1, z: czWorld }, yaw }];
+    }
+    pts.sort((a, b) => a.x - b.x);
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+      const p = pts[Math.floor(((i + 0.5) / 4) * pts.length)];
+      out.push({ position: { x: p.x, y: groundY + 0.1, z: p.z }, yaw });
+    }
+    return out;
+  };
+  // Red occupies the lower-Z half (faces +Z toward centre), blue the upper-Z half.
+  const spawns = {
+    red: pickSpread(collectOpen(Math.floor(nz * 0.18), Math.floor(nz * 0.42)), Math.PI),
+    blue: pickSpread(collectOpen(Math.floor(nz * 0.58), Math.floor(nz * 0.82)), 0),
+  };
 
   const out = {
     cellSize: CELL_SIZE,

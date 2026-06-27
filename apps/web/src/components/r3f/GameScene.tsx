@@ -217,6 +217,8 @@ function GameLoop({
         }
       }
       const camPos = head.clone().add(back.multiplyScalar(dist));
+      // Never let the third-person camera dip below the floor.
+      camPos.y = Math.max(camPos.y, collision.groundY + 0.6);
       camera.position.lerp(camPos, 1 - Math.exp(-30 * dt));
       camera.lookAt(head.clone().add(dir.clone().multiplyScalar(8)));
     }
@@ -227,7 +229,7 @@ function GameLoop({
       ? useAssetStore.getState().manifest.weapons.find((w) => w.id === selfWeaponId)?.config
       : undefined;
     if (!magInit.current && weapon) {
-      store.setHud({ magazine: weapon.magazine, ammo: weapon.magazine });
+      store.setHud({ magazine: weapon.magazine, ammo: weapon.magazine, weaponName: weapon.name });
       magInit.current = true;
     }
     const interval = weapon ? 60000 / weapon.fireRate : fireInterval(DEFAULT_WEAPON) * 1000;

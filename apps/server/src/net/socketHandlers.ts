@@ -18,6 +18,7 @@ import type { Lobby } from '../lobby/Lobby';
 import { GameInstance } from '../game/GameInstance';
 import { weaponRegistry } from '../game/WeaponRegistry';
 import { loadMapColliders } from '../game/MapLoader';
+import { listCharacterIds } from '../game/CharacterRegistry';
 import { logger } from '../logger';
 
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -204,6 +205,20 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
       }
       lobby.phase = 'in-game';
       const code = lobby.code;
+
+      // Read authoritative weapon stats + map collision fresh.
+      const weapons = weaponRegistry.scan();
+      const mapData = loadMapColliders(lobby.settings.mapId);
+
+      // Ensure every player has a character + weapon so an avatar/gun always
+      // renders, even if they didn't pick one in the lobby.
+      const firstWeapon = [...weapons.keys()][0] ?? null;
+      const firstCharacter = listCharacterIds()[0] ?? null;
+      for (const pl of lobby.getState().players) {
+        if (!pl.characterId && firstCharacter) lobby.setCharacter(pl.id, firstCharacter);
+        if (!pl.weaponId && firstWeapon) lobby.setWeapon(pl.id, firstWeapon);
+      }
+
       const payload: GameStartPayload = {
         mapId: lobby.settings.mapId,
         mapSeed: code, // deterministic per-lobby
@@ -211,10 +226,6 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
         players: lobby.getState().players,
         startedAt: Date.now(),
       };
-
-      // Read authoritative weapon stats + map collision fresh.
-      const weapons = weaponRegistry.scan();
-      const mapData = loadMapColliders(lobby.settings.mapId);
 
       // Spin up the authoritative match. onEnd returns the lobby to the waiting
       // state so players can ready up and rematch.
