@@ -332,22 +332,49 @@ async function processMap(id, folder, props = {}) {
     blue: toSpawn(nearest4(bandCx + SEP), Math.PI / 2),
   };
 
-  // 5) Props (cover): scatter the map config's props across the floor, spread out
-  //    and away from spawns, each with a collider box so players can hide behind.
+  // 5) Props (cover): place the map config's props in the CENTRAL play area
+  //    around the spawn midpoint (not flung to the map edges), on the exact
+  //    spawn floor, each with a collider box so players can hide behind them.
   const cfg = existsSync(join(folder, 'config.json')) ? readJson(join(folder, 'config.json')) : {};
   const spawnPts = [...spawns.red, ...spawns.blue].map((s) => s.position);
-  // Keep props on the SAME floor level as the spawns (the main play floor), not
-  // the high tiers/seating, and spaced away from spawn points.
-  const spawnFloorY = (spawns.red[0]?.position.y ?? groundY + 0.1) - 0.1;
-  const propCandidates = all.filter(
+  // Players' feet rest on this surface; sit the cars on the same level.
+  const spawnSurfaceY = spawns.red[0]?.position.y ?? groundY + 0.1;
+  const spawnFloorY = spawnSurfaceY - 0.1;
+  // Centre of the contested area: midpoint of the two team spawns.
+  const midX =
+    spawns.red[0] && spawns.blue[0]
+      ? (spawns.red[0].position.x + spawns.blue[0].position.x) / 2
+      : bandCx;
+  const midZ =
+    spawns.red[0] && spawns.blue[0]
+      ? (spawns.red[0].position.z + spawns.blue[0].position.z) / 2
+      : z0;
+  const MIN_SPAWN_DIST = 10; // keep cars off the spawn points themselves
+  const RING_MIN = 12; // closest a car sits to the arena centre
+  // Build candidate floor columns in a central ring; widen the ring until we
+  // have enough spots for the requested cars.
+  const onFloor = all.filter(
     (p) =>
       p.h >= 2 &&
-      Math.abs(p.y - spawnFloorY) < 4 &&
-      spawnPts.every((s) => Math.hypot(s.x - p.x, s.z - p.z) > 12),
+      Math.abs(p.y - spawnFloorY) < 1.5 &&
+      spawnPts.every((s) => Math.hypot(s.x - p.x, s.z - p.z) > MIN_SPAWN_DIST),
   );
+  const wanted = (cfg.props ?? []).reduce((n, s) => n + (s.count ?? 1), 0);
+  let ringMax = 40;
+  let propCandidates = [];
+  while (ringMax <= 110) {
+    propCandidates = onFloor.filter((p) => {
+      const r = Math.hypot(p.x - midX, p.z - midZ);
+      return r >= RING_MIN && r <= ringMax;
+    });
+    if (propCandidates.length >= wanted * 8) break;
+    ringMax += 15;
+  }
+  if (propCandidates.length === 0) propCandidates = onFloor;
   const propColliders = [];
   const propInstances = [];
   const placed = [];
+  const MIN_GAP = 9; // minimum spacing between two cars (metres)
   for (const spec of cfg.props ?? []) {
     const prop = props[spec.id];
     if (!prop) {
@@ -355,24 +382,34 @@ async function processMap(id, folder, props = {}) {
       continue;
     }
     for (let i = 0; i < (spec.count ?? 1); i++) {
-      // Farthest-point pick for good spread across the floor.
+      // Pick the spot that's well-separated from already-placed cars but still
+      // central: maximise distance-to-nearest-car minus a pull toward centre.
       let pick = null;
-      let bestD = -1;
+      let best = -Infinity;
       for (const c of propCandidates) {
-        const d = placed.length
+        const sep = placed.length
           ? Math.min(...placed.map((q) => Math.hypot(q.x - c.x, q.z - c.z)))
-          : Math.hypot(c.x - bandCx, c.z - z0);
-        if (d > bestD) [bestD, pick] = [d, c];
+          : 999;
+        if (placed.length && sep < MIN_GAP) continue;
+        const centrePull = Math.hypot(c.x - midX, c.z - midZ) * 0.25;
+        const score = sep - centrePull;
+        if (score > best) [best, pick] = [score, c];
       }
       if (!pick) break;
       placed.push(pick);
       const rot = (placed.length % 2) * (Math.PI / 2);
       const ex = rot === 0 ? prop.size.x : prop.size.z;
       const ez = rot === 0 ? prop.size.z : prop.size.x;
-      propInstances.push({ model: prop.model, x: pick.x, y: pick.y, z: pick.z, rotationY: rot });
+      propInstances.push({
+        model: prop.model,
+        x: pick.x,
+        y: spawnSurfaceY,
+        z: pick.z,
+        rotationY: rot,
+      });
       propColliders.push({
-        min: { x: pick.x - ex / 2, y: pick.y, z: pick.z - ez / 2 },
-        max: { x: pick.x + ex / 2, y: pick.y + prop.size.y, z: pick.z + ez / 2 },
+        min: { x: pick.x - ex / 2, y: spawnSurfaceY, z: pick.z - ez / 2 },
+        max: { x: pick.x + ex / 2, y: spawnSurfaceY + prop.size.y, z: pick.z + ez / 2 },
       });
     }
   }
