@@ -218,47 +218,52 @@ async function processMap(id, folder) {
   let solidCount = 0;
   for (const v of solid) solidCount += v;
 
-  // 4) Spawns. Find the widest OPEN-TO-SKY area (no solid in the whole column),
-  //    then put both teams along the SAME Z line: teammates clustered together,
-  //    the enemy team offset along X (a little farther). Falls back to merely
-  //    "standable" columns if the map is fully covered.
-  const openColumn = (ix, iz) => {
-    for (let iy = 0; iy < ny; iy++) if (solid[(iy * nz + iz) * nx + ix]) return false;
-    return true;
-  };
-  const standableColumn = (ix, iz) => {
-    for (let iy = 0; iy < SPAWN_HEADROOM; iy++) if (solid[(iy * nz + iz) * nx + ix]) return false;
-    return true;
-  };
-  const collect = (test) => {
-    const pts = [];
-    for (let iz = 0; iz < nz; iz++) {
-      for (let ix = 0; ix < nx; ix++) {
-        if (test(ix, iz)) {
-          pts.push({
-            ix,
-            iz,
-            x: origin[0] + (ix + 0.5) * CELL_SIZE,
-            z: origin[2] + (iz + 0.5) * CELL_SIZE,
-          });
-        }
-      }
+  // 4) Spawns. This map has no open sky, so spawn in the LARGEST ground-floor
+  //    area with the most overhead clearance (the most open-feeling indoor hall).
+  //    Both teams share the same Z line: teammates clustered, enemies offset in X.
+  const headroomOf = (ix, iz) => {
+    let h = 0;
+    for (let iy = 1; iy < ny; iy++) {
+      if (solid[(iy * nz + iz) * nx + ix]) break;
+      h++;
     }
-    return pts;
+    return h;
   };
+  const all = [];
+  for (let iz = 0; iz < nz; iz++) {
+    for (let ix = 0; ix < nx; ix++) {
+      all.push({
+        ix,
+        iz,
+        h: headroomOf(ix, iz),
+        x: origin[0] + (ix + 0.5) * CELL_SIZE,
+        z: origin[2] + (iz + 0.5) * CELL_SIZE,
+      });
+    }
+  }
+  const candidates = all.filter((p) => p.h >= SPAWN_HEADROOM);
+  const pool = candidates.length ? candidates : all;
 
-  let openPts = collect(openColumn);
-  if (openPts.length < 8) openPts = collect(standableColumn);
-
-  // Z line with the most open columns = the widest clear lane.
-  const perZ = new Map();
-  for (const p of openPts) perZ.set(p.iz, (perZ.get(p.iz) ?? 0) + 1);
-  let z0iz = Math.floor(nz / 2);
-  let bestCount = -1;
-  for (const [iz, c] of perZ) if (c > bestCount) [bestCount, z0iz] = [c, iz];
-  const z0 = origin[2] + (z0iz + 0.5) * CELL_SIZE;
-  const band = openPts.filter((p) => Math.abs(p.iz - z0iz) <= 4);
-  const bandCx = band.length ? band.reduce((a, p) => a + p.x, 0) / band.length : 0;
+  // Pick the coarse region whose columns have the most total clearance (biggest,
+  // most open hall), and anchor the spawn cluster at its centroid.
+  const REG = 8;
+  const regions = new Map();
+  for (const p of pool) {
+    const rx = Math.min(REG - 1, Math.floor(((p.x - min[0]) / (max[0] - min[0] || 1)) * REG));
+    const rz = Math.min(REG - 1, Math.floor(((p.z - min[2]) / (max[2] - min[2] || 1)) * REG));
+    const key = `${rx},${rz}`;
+    if (!regions.has(key)) regions.set(key, []);
+    regions.get(key).push(p);
+  }
+  let region = pool;
+  let bestScore = -1;
+  for (const pts of regions.values()) {
+    const score = pts.reduce((a, p) => a + p.h, 0);
+    if (score > bestScore) [bestScore, region] = [score, pts];
+  }
+  const z0 = region.reduce((a, p) => a + p.z, 0) / region.length;
+  const bandCx = region.reduce((a, p) => a + p.x, 0) / region.length;
+  const band = region;
 
   const SEP = 12; // metres between team centres
   const nearest4 = (targetX) =>

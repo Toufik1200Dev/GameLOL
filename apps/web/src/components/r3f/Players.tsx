@@ -12,7 +12,7 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import type { Group } from 'three';
-import { PLAYER_HEIGHT, PLAYER_RADIUS, type TeamId } from '@game/shared';
+import { PLAYER_HEIGHT, PLAYER_RADIUS, lerpAngle, type TeamId } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
 import type { NetGameClient } from '../../game/net/NetGameClient';
@@ -103,12 +103,16 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
   const self = useGameStore((s) => s.roster.find((p) => p.id === client.selfId));
   const team = self?.team ?? 'red';
 
-  useFrame(() => {
+  useFrame((_s, dt) => {
     const g = ref.current;
     if (!g) return;
     g.visible = !controls.firstPerson;
     g.position.set(client.render.position.x, client.render.position.y, client.render.position.z);
-    g.rotation.set(0, client.render.yaw, 0);
+    // Turn the body toward the movement direction; face aim when standing still.
+    const v = client.predicted.velocity;
+    const speed = Math.hypot(v.x, v.z);
+    const targetYaw = speed > 1.2 ? Math.atan2(-v.x, -v.z) : client.render.yaw;
+    g.rotation.y = lerpAngle(g.rotation.y, targetYaw, 1 - Math.exp(-12 * dt));
   });
 
   return (
@@ -128,19 +132,29 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
 
 function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
   const ref = useRef<Group>(null);
+  const last = useRef<{ x: number; z: number } | null>(null);
   const meta = useGameStore((s) => s.roster.find((p) => p.id === id));
 
-  useFrame(() => {
+  useFrame((_s, dt) => {
     const g = ref.current;
     if (!g) return;
     const s = client.sampleRemote(id);
     if (!s || !s.alive) {
       g.visible = false;
+      last.current = null;
       return;
     }
     g.visible = true;
     g.position.set(s.x, s.y, s.z);
-    g.rotation.set(0, s.yaw, 0);
+    // Face the interpolated movement direction; fall back to aim yaw when still.
+    let targetYaw = s.yaw;
+    if (last.current) {
+      const dx = s.x - last.current.x;
+      const dz = s.z - last.current.z;
+      if (Math.hypot(dx, dz) > 0.02) targetYaw = Math.atan2(-dx, -dz);
+    }
+    last.current = { x: s.x, z: s.z };
+    g.rotation.y = lerpAngle(g.rotation.y, targetYaw, 1 - Math.exp(-12 * dt));
   });
 
   const team = meta?.team ?? 'blue';
