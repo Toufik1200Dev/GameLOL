@@ -16,6 +16,7 @@ import {
 import { LobbyManager } from '../lobby/LobbyManager';
 import type { Lobby } from '../lobby/Lobby';
 import { GameInstance } from '../game/GameInstance';
+import { weaponRegistry } from '../game/WeaponRegistry';
 import { logger } from '../logger';
 
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -210,17 +211,28 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
         startedAt: Date.now(),
       };
 
+      // Read authoritative weapon stats fresh (picks up newly added weapons).
+      const weapons = weaponRegistry.scan();
+
       // Spin up the authoritative match. onEnd returns the lobby to the waiting
       // state so players can ready up and rematch.
-      const game = new GameInstance(io, code, code, lobby.settings, payload.players, () => {
-        games.delete(code);
-        const lob = manager.get(code);
-        if (lob) {
-          lob.phase = 'lobby';
-          for (const pl of lob.getState().players) lob.setReady(pl.id, false);
-          broadcast(lob);
-        }
-      });
+      const game = new GameInstance(
+        io,
+        code,
+        code,
+        lobby.settings,
+        payload.players,
+        weapons,
+        () => {
+          games.delete(code);
+          const lob = manager.get(code);
+          if (lob) {
+            lob.phase = 'lobby';
+            for (const pl of lob.getState().players) lob.setReady(pl.id, false);
+            broadcast(lob);
+          }
+        },
+      );
       games.set(code, game);
 
       io.to(code).emit('game:starting', payload);

@@ -6,10 +6,12 @@
  */
 import type { GameStartPayload, LobbySettings, LobbyState, TeamId } from '../types/lobby';
 import type {
+  ExplosionEvent,
   GameSnapshot,
   HitEvent,
   KillEvent,
   MatchEndPayload,
+  ProjectileSpawn,
   ShootCommand,
 } from '../types/game';
 import type { PlayerInput } from '../sim/types';
@@ -46,6 +48,10 @@ export interface ServerToClientEvents {
   'game:hit': (event: HitEvent) => void;
   /** A kill occurred (kill feed). */
   'game:kill': (event: KillEvent) => void;
+  /** A projectile was fired (client renders it travelling). */
+  'game:projectile': (projectile: ProjectileSpawn) => void;
+  /** A projectile/area detonated (explosion VFX). */
+  'game:explosion': (explosion: ExplosionEvent) => void;
   /** The match ended; show the victory screen. */
   'game:ended': (payload: MatchEndPayload) => void;
 }

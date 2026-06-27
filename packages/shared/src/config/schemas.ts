@@ -72,8 +72,10 @@ export const weaponConfigSchema = z.object({
   magazine: z.number().int().positive().default(30),
   /** Seconds to reload. */
   reloadSpeed: z.number().positive().default(2),
-  /** Units/second; 0 ⇒ treat as hitscan. */
-  projectileSpeed: z.number().nonnegative().default(120),
+  /** Units/second; 0 ⇒ hitscan, >0 ⇒ travelling projectile. */
+  projectileSpeed: z.number().nonnegative().default(0),
+  /** Explosion radius (metres) for projectiles; 0 ⇒ direct hit only. */
+  splashRadius: z.number().nonnegative().default(0),
   recoil: z.number().nonnegative().default(0.3),
   spread: z.number().nonnegative().default(0.02),
   range: z.number().positive().default(80),

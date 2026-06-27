@@ -76,6 +76,28 @@ export interface KillEvent {
   weaponId: string | null;
 }
 
+/** A travelling projectile spawned by the server (rendered client-side). */
+export interface ProjectileSpawn {
+  id: number;
+  ownerId: string;
+  x: number;
+  y: number;
+  z: number;
+  dx: number;
+  dy: number;
+  dz: number;
+  speed: number;
+}
+
+/** A projectile/area detonation, for explosion VFX. */
+export interface ExplosionEvent {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+}
+
 /** Sent to the winning condition / end of match. */
 export interface MatchEndPayload {
   winner: TeamId | 'draw';

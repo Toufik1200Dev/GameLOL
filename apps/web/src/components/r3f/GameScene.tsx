@@ -23,6 +23,7 @@ import {
 import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
 import { useSettingsStore, type GraphicsQuality } from '../../stores/settingsStore';
+import { getSocket } from '../../lib/socket';
 import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
 import { World } from './World';
@@ -116,6 +117,7 @@ function GameLoop({
   const lastShot = useRef(0);
   const reloadUntil = useRef(0);
   const tracerId = useRef(0);
+  const magInit = useRef(false);
   const fpsAcc = useRef({ t: 0, n: 0 });
   const baseFov = useRef(useSettingsStore.getState().fov);
 
@@ -184,16 +186,29 @@ function GameLoop({
       camera.lookAt(head.clone().add(dir.clone().multiplyScalar(8)));
     }
 
-    // 4) shooting + reload
+    // 4) shooting + reload — resolve the local player's selected weapon stats.
+    const selfWeaponId = store.roster.find((p) => p.id === client.selfId)?.weaponId ?? null;
+    const weapon = selfWeaponId
+      ? useAssetStore.getState().manifest.weapons.find((w) => w.id === selfWeaponId)?.config
+      : undefined;
+    if (!magInit.current && weapon) {
+      store.setHud({ magazine: weapon.magazine, ammo: weapon.magazine });
+      magInit.current = true;
+    }
+    const interval = weapon ? 60000 / weapon.fireRate : fireInterval(DEFAULT_WEAPON) * 1000;
+    const range = weapon?.range ?? DEFAULT_WEAPON.range;
+    const isProjectile = (weapon?.projectileSpeed ?? 0) > 0;
+    const reloadMs = (weapon?.reloadSpeed ?? 1.8) * 1000;
+    const recoil = weapon?.recoil ?? 0.3;
+
     const now = performance.now();
     if (store.reloading && now >= reloadUntil.current) {
       store.setHud({ reloading: false, ammo: store.magazine });
     }
     if (!store.reloading && (c.reload || store.ammo <= 0) && store.ammo < store.magazine && alive) {
       store.setHud({ reloading: true });
-      reloadUntil.current = now + 1800;
+      reloadUntil.current = now + reloadMs;
     }
-    const interval = fireInterval(DEFAULT_WEAPON) * 1000;
     if (
       c.shoot &&
       alive &&
@@ -206,12 +221,16 @@ function GameLoop({
       store.setHud({ ammo: store.ammo - 1 });
       const origin = { x: head.x, y: head.y, z: head.z };
       client.shoot(origin, { x: dir.x, y: dir.y, z: dir.z });
-      const start = head.clone().add(dir.clone().multiplyScalar(0.6));
-      const end = head.clone().add(dir.clone().multiplyScalar(DEFAULT_WEAPON.range));
-      pool.current.push({ id: ++tracerId.current, start, end, born: now });
-      if (pool.current.length > 24) pool.current.shift();
-      // Recoil kick.
-      c.pitch = Math.min(1.4, c.pitch + 0.012);
+      // Hitscan weapons draw a tracer; projectile weapons are rendered from the
+      // server's projectile event (see CombatVFX).
+      if (!isProjectile) {
+        const start = head.clone().add(dir.clone().multiplyScalar(0.6));
+        const end = head.clone().add(dir.clone().multiplyScalar(range));
+        pool.current.push({ id: ++tracerId.current, start, end, born: now });
+        if (pool.current.length > 24) pool.current.shift();
+      }
+      // Recoil kick (scaled by weapon recoil).
+      c.pitch = Math.min(1.4, c.pitch + Math.min(0.05, recoil * 0.03));
     }
 
     // 5) fps
@@ -225,6 +244,115 @@ function GameLoop({
   });
 
   return null;
+}
+
+interface ActiveProjectile {
+  id: number;
+  pos: THREE.Vector3;
+  dir: THREE.Vector3;
+  speed: number;
+  born: number;
+}
+interface ActiveExplosion {
+  id: number;
+  pos: THREE.Vector3;
+  radius: number;
+  born: number;
+}
+const PROJECTILE_LIFE = 6000;
+const EXPLOSION_LIFE = 500;
+
+/** Renders travelling projectiles + explosion flashes from server combat events. */
+function CombatVFX() {
+  const projectiles = useRef<Map<number, ActiveProjectile>>(new Map());
+  const explosions = useRef<ActiveExplosion[]>([]);
+  const prevHad = useRef(false);
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    const socket = getSocket();
+    const onProjectile = (p: {
+      id: number;
+      x: number;
+      y: number;
+      z: number;
+      dx: number;
+      dy: number;
+      dz: number;
+      speed: number;
+    }) => {
+      projectiles.current.set(p.id, {
+        id: p.id,
+        pos: new THREE.Vector3(p.x, p.y, p.z),
+        dir: new THREE.Vector3(p.dx, p.dy, p.dz),
+        speed: p.speed,
+        born: performance.now(),
+      });
+    };
+    const onExplosion = (e: { id: number; x: number; y: number; z: number; radius: number }) => {
+      projectiles.current.delete(e.id);
+      explosions.current.push({
+        id: e.id,
+        pos: new THREE.Vector3(e.x, e.y, e.z),
+        radius: e.radius,
+        born: performance.now(),
+      });
+    };
+    socket.on('game:projectile', onProjectile);
+    socket.on('game:explosion', onExplosion);
+    return () => {
+      socket.off('game:projectile', onProjectile);
+      socket.off('game:explosion', onExplosion);
+    };
+  }, []);
+
+  useFrame((_s, rawDt) => {
+    const dt = Math.min(rawDt, 0.05);
+    const now = performance.now();
+    for (const [id, p] of projectiles.current) {
+      p.pos.addScaledVector(p.dir, p.speed * dt);
+      if (now - p.born > PROJECTILE_LIFE) projectiles.current.delete(id);
+    }
+    if (explosions.current.length) {
+      explosions.current = explosions.current.filter((e) => now - e.born < EXPLOSION_LIFE);
+    }
+    const has = projectiles.current.size > 0 || explosions.current.length > 0;
+    if (has || prevHad.current) force((n) => n + 1);
+    prevHad.current = has;
+  });
+
+  return (
+    <group>
+      {[...projectiles.current.values()].map((p) => (
+        <mesh key={p.id} position={p.pos}>
+          <sphereGeometry args={[0.18, 10, 10]} />
+          <meshStandardMaterial
+            color="#ffb020"
+            emissive="#ff7a00"
+            emissiveIntensity={3}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      {explosions.current.map((e) => {
+        const age = (performance.now() - e.born) / EXPLOSION_LIFE;
+        const scale = e.radius * (0.4 + age * 0.9);
+        return (
+          <mesh key={e.id} position={e.pos} scale={scale}>
+            <sphereGeometry args={[1, 16, 16]} />
+            <meshStandardMaterial
+              color="#ff7a2a"
+              emissive="#ff5500"
+              emissiveIntensity={2}
+              transparent
+              opacity={Math.max(0, 1 - age)}
+              toneMapped={false}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
 }
 
 /** First-person weapon viewmodel for the local player (follows the camera). */
@@ -295,6 +423,7 @@ export function GameScene({
       <FirstPersonViewmodel client={client} controls={controls} />
       <GameLoop client={client} world={world} controls={controls} pool={pool} />
       <Tracers pool={pool} />
+      <CombatVFX />
       <PostFX quality={quality} />
     </Canvas>
   );

@@ -86,8 +86,8 @@ export function WeaponSelectScreen() {
                         className="h-full w-full object-cover"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-2xl text-white/20">
-                        ?
+                      <div className="font-display flex h-full w-full items-center justify-center bg-gradient-to-br from-[var(--color-accent-strong)]/40 to-[var(--color-panel)] text-2xl font-bold text-white/80">
+                        {w.config.name.charAt(0).toUpperCase()}
                       </div>
                     )}
                   </div>

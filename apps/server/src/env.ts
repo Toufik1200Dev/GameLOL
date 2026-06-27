@@ -3,6 +3,7 @@
  * vars in exactly one place keeps deploy config predictable.
  */
 import 'dotenv/config';
+import { resolve } from 'node:path';
 import { DEFAULT_SERVER_PORT } from '@game/shared';
 
 const parsePort = (value: string | undefined, fallback: number): number => {
@@ -28,4 +29,10 @@ export const env = {
   isProduction: process.env.NODE_ENV === 'production',
   port: parsePort(process.env.PORT, DEFAULT_SERVER_PORT),
   clientOrigin: parseOrigins(process.env.CLIENT_ORIGIN ?? 'http://localhost:3000'),
+  /**
+   * Where the server reads authoritative weapon/character configs from. Defaults
+   * to the web app's public assets in the monorepo (dev). In production, set
+   * ASSETS_DIR or the server falls back to default combat stats.
+   */
+  assetsDir: process.env.ASSETS_DIR ?? resolve(process.cwd(), '../web/public/assets'),
 } as const;

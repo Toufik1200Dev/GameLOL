@@ -6,6 +6,7 @@
   "magazine": 4,
   "reloadSpeed": 3.2,
   "projectileSpeed": 35,
+  "splashRadius": 5,
   "recoil": 1.0,
   "spread": 0.0,
   "range": 120,

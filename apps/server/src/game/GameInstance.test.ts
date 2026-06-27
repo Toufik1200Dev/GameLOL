@@ -3,7 +3,9 @@ import {
   DEFAULT_MAX_HEARTS,
   EYE_HEIGHT,
   createDefaultLobbySettings,
+  weaponConfigSchema,
   type PlayerPublic,
+  type WeaponConfig,
 } from '@game/shared';
 import { GameInstance, type ServerPlayer } from './GameInstance';
 
@@ -58,9 +60,10 @@ interface Internals {
   players: Map<string, ServerPlayer>;
   world: { colliders: unknown[] };
   scores: Record<'red' | 'blue', number>;
+  step(): void;
 }
 
-function setup() {
+function setup(weapons = new Map<string, WeaponConfig>()) {
   const sink: Emitted[] = [];
   const io = makeFakeIo(sink);
   const game = new GameInstance(
@@ -69,6 +72,7 @@ function setup() {
     'seed',
     createDefaultLobbySettings(),
     roster(),
+    weapons,
     () => {},
   );
   const internals = game as unknown as Internals;
@@ -140,6 +144,69 @@ describe('GameInstance combat', () => {
       dir: { x: 1, y: 0, z: 0 }, // perpendicular, B is at -Z
       clientTime: Date.now(),
     });
+    expect(b.health).toBe(DEFAULT_MAX_HEARTS);
+  });
+});
+
+describe('GameInstance projectiles + splash', () => {
+  const rocket = (): WeaponConfig =>
+    weaponConfigSchema.parse({
+      name: 'Rocket',
+      damage: 4,
+      fireRate: 60,
+      projectileSpeed: 30,
+      splashRadius: 5,
+      range: 100,
+    });
+
+  it('spawns a projectile, detonates on the target, and applies splash damage', () => {
+    const weapons = new Map<string, WeaponConfig>([['rocket', rocket()]]);
+    const { game, sink, a, b, internals } = setup(weapons);
+    internals.world.colliders.length = 0;
+    a.weaponId = 'rocket';
+    a.move.position = { x: 0, y: 0, z: 0 };
+    b.move.position = { x: 0, y: 0, z: -8 };
+    b.invulnUntil = 0;
+
+    game.start();
+    game.stop(); // sets startTime without leaving timers running
+
+    a.lastFireTime = 0;
+    game.handleShoot('a', {
+      seq: 1,
+      origin: { x: 0, y: EYE_HEIGHT, z: 0 },
+      dir: { x: 0, y: 0, z: -1 },
+      clientTime: Date.now(),
+    });
+    expect(sink.some((e) => e.event === 'game:projectile')).toBe(true);
+
+    // Advance ticks until the rocket reaches B (~8 units at 1/tick).
+    for (let i = 0; i < 40 && b.health === DEFAULT_MAX_HEARTS; i++) internals.step();
+
+    expect(sink.some((e) => e.event === 'game:explosion')).toBe(true);
+    expect(b.health).toBeLessThan(DEFAULT_MAX_HEARTS);
+  });
+
+  it('does not splash a teammate when friendly fire is off', () => {
+    const weapons = new Map<string, WeaponConfig>([['rocket', rocket()]]);
+    const { game, a, b, internals } = setup(weapons);
+    internals.world.colliders.length = 0;
+    a.weaponId = 'rocket';
+    b.team = 'red'; // teammate
+    a.move.position = { x: 0, y: 0, z: 0 };
+    b.move.position = { x: 0, y: 0, z: -8 };
+
+    game.start();
+    game.stop();
+    a.lastFireTime = 0;
+    game.handleShoot('a', {
+      seq: 1,
+      origin: { x: 0, y: EYE_HEIGHT, z: 0 },
+      dir: { x: 0, y: 0, z: -1 },
+      clientTime: Date.now(),
+    });
+    for (let i = 0; i < 40; i++) internals.step();
+
     expect(b.health).toBe(DEFAULT_MAX_HEARTS);
   });
 });

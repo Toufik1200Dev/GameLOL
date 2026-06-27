@@ -14,6 +14,7 @@ import {
   EYE_HEIGHT,
   INTERPOLATION_DELAY_MS,
   LAG_COMP_HISTORY_TICKS,
+  PLAYER_HEIGHT,
   RESPAWN_INVULN_SEC,
   SNAPSHOT_RATE,
   SPRINT_MULTIPLIER,
@@ -21,7 +22,6 @@ import {
   TICK_RATE,
   clamp,
   createMoveState,
-  fireInterval,
   generateWorld,
   playerHitBox,
   rayAABB,
@@ -40,6 +40,7 @@ import {
   type SocketData,
   type TeamId,
   type Vec3,
+  type WeaponConfig,
 } from '@game/shared';
 import { logger } from '../logger';
 
@@ -72,8 +73,30 @@ interface HistoryFrame {
   positions: Map<string, Vec3>;
 }
 
+interface ServerProjectile {
+  id: number;
+  ownerId: string;
+  team: TeamId;
+  pos: Vec3;
+  dir: Vec3;
+  speed: number;
+  damage: number;
+  splashRadius: number;
+  range: number;
+  traveled: number;
+}
+
+interface ResolvedWeapon {
+  damage: number;
+  fireIntervalMs: number;
+  range: number;
+  projectileSpeed: number;
+  splashRadius: number;
+}
+
 const MAX_QUEUE = 64;
 const PER_TICK_DT_BUDGET = TICK_DURATION * 2;
+const PROJECTILE_MAX_LIFETIME = 6; // seconds
 
 export class GameInstance {
   readonly code: string;
@@ -86,7 +109,11 @@ export class GameInstance {
   };
   private readonly settings: LobbySettings;
   private readonly players = new Map<string, ServerPlayer>();
+  private readonly weapons: Map<string, WeaponConfig>;
   private readonly onEnd: () => void;
+
+  private readonly projectiles: ServerProjectile[] = [];
+  private nextProjectileId = 1;
 
   private readonly scores: Record<TeamId, number> = { red: 0, blue: 0 };
   private readonly spawnCursor: Record<TeamId, number> = { red: 0, blue: 0 };
@@ -107,11 +134,13 @@ export class GameInstance {
     seed: string,
     settings: LobbySettings,
     roster: PlayerPublic[],
+    weapons: Map<string, WeaponConfig>,
     onEnd: () => void,
   ) {
     this.io = io;
     this.code = code;
     this.settings = settings;
+    this.weapons = weapons;
     this.onEnd = onEnd;
     this.world = generateWorld(seed);
     this.collisionWorld = {
@@ -199,12 +228,34 @@ export class GameInstance {
     p.inputQueue.push(input);
   }
 
+  /** Resolve a player's authoritative weapon stats (config or default fallback). */
+  private resolveWeapon(player: ServerPlayer): ResolvedWeapon {
+    const cfg = player.weaponId ? this.weapons.get(player.weaponId) : undefined;
+    if (cfg) {
+      return {
+        damage: cfg.damage,
+        fireIntervalMs: 60000 / cfg.fireRate,
+        range: cfg.range,
+        projectileSpeed: cfg.projectileSpeed,
+        splashRadius: cfg.splashRadius,
+      };
+    }
+    return {
+      damage: DEFAULT_WEAPON.damage,
+      fireIntervalMs: 60000 / DEFAULT_WEAPON.fireRateRpm,
+      range: DEFAULT_WEAPON.range,
+      projectileSpeed: 0,
+      splashRadius: 0,
+    };
+  }
+
   handleShoot(id: string, cmd: ShootCommand): void {
     const shooter = this.players.get(id);
     if (!shooter || !shooter.alive) return;
 
+    const weapon = this.resolveWeapon(shooter);
     const now = Date.now();
-    if (now - shooter.lastFireTime < fireInterval(DEFAULT_WEAPON) * 1000 - 8) return; // rate limit
+    if (now - shooter.lastFireTime < weapon.fireIntervalMs - 8) return; // rate limit
     shooter.lastFireTime = now;
 
     // Authoritative origin = server-side eye position (prevents origin spoofing).
@@ -216,18 +267,45 @@ export class GameInstance {
     const dir = normalize(cmd.dir);
     if (dir.x === 0 && dir.y === 0 && dir.z === 0) return;
 
-    // Lag compensation: rewind enemies to roughly when the shooter fired.
+    // Projectile weapon → spawn a travelling round; resolved on later ticks.
+    if (weapon.projectileSpeed > 0) {
+      const projectile: ServerProjectile = {
+        id: this.nextProjectileId++,
+        ownerId: shooter.id,
+        team: shooter.team,
+        pos: { x: origin.x + dir.x * 0.5, y: origin.y + dir.y * 0.5, z: origin.z + dir.z * 0.5 },
+        dir,
+        speed: weapon.projectileSpeed,
+        damage: weapon.damage,
+        splashRadius: weapon.splashRadius,
+        range: weapon.range,
+        traveled: 0,
+      };
+      this.projectiles.push(projectile);
+      this.io.to(this.code).emit('game:projectile', {
+        id: projectile.id,
+        ownerId: shooter.id,
+        x: projectile.pos.x,
+        y: projectile.pos.y,
+        z: projectile.pos.z,
+        dx: dir.x,
+        dy: dir.y,
+        dz: dir.z,
+        speed: weapon.projectileSpeed,
+      });
+      return;
+    }
+
+    // Hitscan: lag-compensate enemies to roughly when the shooter fired.
     const rewindTo = now - (INTERPOLATION_DELAY_MS + shooter.ping / 2);
     const rewound = this.positionsAt(rewindTo);
 
-    // Nearest blocking world geometry along the ray (line of sight).
-    let nearestWorld = DEFAULT_WEAPON.range;
+    let nearestWorld = weapon.range;
     for (const box of this.world.colliders) {
       const t = rayAABB(origin, dir, box);
       if (t !== null && t < nearestWorld) nearestWorld = t;
     }
 
-    // Closest hittable player in front of any wall.
     let victim: ServerPlayer | null = null;
     let victimT = nearestWorld;
     let point: Vec3 = {
@@ -235,7 +313,6 @@ export class GameInstance {
       y: origin.y + dir.y * victimT,
       z: origin.z + dir.z * victimT,
     };
-
     for (const other of this.players.values()) {
       if (other.id === id || !other.alive) continue;
       if (other.team === shooter.team && !this.settings.friendlyFire) continue;
@@ -248,30 +325,117 @@ export class GameInstance {
       }
     }
 
-    if (!victim) return;
-    if (now < victim.invulnUntil) return; // spawn protection
+    if (victim) this.applyDamage(shooter, victim, weapon.damage, point);
+  }
 
-    victim.health -= DEFAULT_WEAPON.damage;
+  /** Apply damage from a shooter, emitting hit + (on death) kill. Honours invuln. */
+  private applyDamage(
+    shooter: ServerPlayer,
+    victim: ServerPlayer,
+    amount: number,
+    point: Vec3,
+  ): void {
+    if (!victim.alive || Date.now() < victim.invulnUntil) return;
+    victim.health -= amount;
     const killed = victim.health <= 0;
-
-    this.io.to(shooter.id).emit('game:hit', {
+    const payload = {
       shooterId: shooter.id,
       victimId: victim.id,
-      damage: DEFAULT_WEAPON.damage,
+      damage: amount,
       victimHealth: Math.max(0, victim.health),
       killed,
       point,
-    });
-    this.io.to(victim.id).emit('game:hit', {
-      shooterId: shooter.id,
-      victimId: victim.id,
-      damage: DEFAULT_WEAPON.damage,
-      victimHealth: Math.max(0, victim.health),
-      killed,
-      point,
-    });
-
+    };
+    this.io.to(shooter.id).emit('game:hit', payload);
+    this.io.to(victim.id).emit('game:hit', payload);
     if (killed) this.killPlayer(shooter, victim);
+  }
+
+  /** Detonate a projectile: explosion VFX + direct/splash damage. */
+  private detonate(p: ServerProjectile, point: Vec3, directVictim: ServerPlayer | null): void {
+    this.io.to(this.code).emit('game:explosion', {
+      id: p.id,
+      x: point.x,
+      y: point.y,
+      z: point.z,
+      radius: Math.max(0.4, p.splashRadius),
+    });
+
+    const owner = this.players.get(p.ownerId);
+    if (!owner) return;
+
+    if (p.splashRadius > 0) {
+      for (const other of this.players.values()) {
+        if (!other.alive || other.id === p.ownerId) continue;
+        if (other.team === p.team && !this.settings.friendlyFire) continue;
+        const cx = other.move.position.x;
+        const cy = other.move.position.y + PLAYER_HEIGHT / 2;
+        const cz = other.move.position.z;
+        const dist = Math.hypot(cx - point.x, cy - point.y, cz - point.z);
+        if (dist <= p.splashRadius) {
+          const dmg = Math.max(1, Math.round(p.damage * (1 - dist / p.splashRadius)));
+          this.applyDamage(owner, other, dmg, point);
+        }
+      }
+    } else if (directVictim) {
+      this.applyDamage(owner, directVictim, p.damage, point);
+    }
+  }
+
+  /** Advance travelling projectiles, detonating on player/world/ground impact. */
+  private updateProjectiles(dt: number): void {
+    if (this.projectiles.length === 0) return;
+    const remaining: ServerProjectile[] = [];
+    for (const p of this.projectiles) {
+      const step = p.speed * dt;
+      let hitT = step;
+      let directVictim: ServerPlayer | null = null;
+
+      for (const other of this.players.values()) {
+        if (other.id === p.ownerId || !other.alive) continue;
+        if (other.team === p.team && !this.settings.friendlyFire) continue;
+        const t = rayAABB(p.pos, p.dir, playerHitBox(other.move.position));
+        if (t !== null && t >= 0 && t < hitT) {
+          hitT = t;
+          directVictim = other;
+        }
+      }
+      for (const box of this.world.colliders) {
+        const t = rayAABB(p.pos, p.dir, box);
+        if (t !== null && t >= 0 && t < hitT) {
+          hitT = t;
+          directVictim = null;
+        }
+      }
+      if (p.dir.y < 0) {
+        const tGround = (this.world.groundY - p.pos.y) / p.dir.y;
+        if (tGround >= 0 && tGround < hitT) {
+          hitT = tGround;
+          directVictim = null;
+        }
+      }
+
+      const collided = hitT < step;
+      const point: Vec3 = {
+        x: p.pos.x + p.dir.x * hitT,
+        y: p.pos.y + p.dir.y * hitT,
+        z: p.pos.z + p.dir.z * hitT,
+      };
+      const lifetime = p.traveled / p.speed;
+      if (collided || p.traveled + step >= p.range || lifetime > PROJECTILE_MAX_LIFETIME) {
+        this.detonate(p, point, directVictim);
+        continue;
+      }
+      p.pos = {
+        x: p.pos.x + p.dir.x * step,
+        y: p.pos.y + p.dir.y * step,
+        z: p.pos.z + p.dir.z * step,
+      };
+      p.traveled += step;
+      remaining.push(p);
+    }
+    this.projectiles.length = 0;
+    this.projectiles.push(...remaining);
   }
 
   private killPlayer(killer: ServerPlayer, victim: ServerPlayer): void {
@@ -322,6 +486,9 @@ export class GameInstance {
     for (const p of this.players.values()) frame.positions.set(p.id, { ...p.move.position });
     this.history.push(frame);
     if (this.history.length > LAG_COMP_HISTORY_TICKS) this.history.shift();
+
+    // Advance any travelling projectiles (rockets etc.).
+    this.updateProjectiles(TICK_DURATION);
 
     this.tick += 1;
 
