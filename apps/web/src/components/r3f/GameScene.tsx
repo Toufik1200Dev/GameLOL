@@ -10,7 +10,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, Sky } from '@react-three/drei';
-import { Bloom, EffectComposer, Vignette } from '@react-three/postprocessing';
 import * as THREE from 'three';
 import {
   CROUCH_EYE_HEIGHT,
@@ -24,7 +23,7 @@ import {
 } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
-import { useSettingsStore, type GraphicsQuality } from '../../stores/settingsStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { getSocket } from '../../lib/socket';
 import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
@@ -100,18 +99,6 @@ function SceneEnv({ scene }: { scene: SceneInfo }) {
         shadow-camera-bottom={-size}
       />
     </>
-  );
-}
-
-function PostFX({ quality }: { quality: GraphicsQuality }) {
-  // Post-processing (extra render targets) is the heaviest GPU cost + the most
-  // fragile on context loss — reserve it for the 'high' tier.
-  if (quality !== 'high') return null;
-  return (
-    <EffectComposer>
-      <Bloom intensity={0.5} luminanceThreshold={0.75} luminanceSmoothing={0.2} mipmapBlur />
-      <Vignette eskil={false} offset={0.2} darkness={0.7} />
-    </EffectComposer>
   );
 }
 
@@ -484,7 +471,6 @@ export function GameScene({
       <GameLoop client={client} collision={scene.collision} controls={controls} pool={pool} />
       <Tracers pool={pool} />
       <CombatVFX />
-      <PostFX quality={quality} />
     </Canvas>
   );
 }
