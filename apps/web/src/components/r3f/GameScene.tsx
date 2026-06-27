@@ -20,6 +20,7 @@ import {
   raycastGrid,
   type CollisionWorld,
   type GeneratedWorld,
+  type PropInstance,
 } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
@@ -29,6 +30,7 @@ import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
 import { World } from './World';
 import { MapModel } from './MapModel';
+import { MapProps } from './MapProps';
 import { Players } from './Players';
 import { WeaponModel } from './CharacterModel';
 
@@ -37,6 +39,7 @@ export interface SceneInfo {
   collision: CollisionWorld;
   proceduralWorld: GeneratedWorld | null;
   mapModelUrl: string | null;
+  props: PropInstance[];
   skyColor: string;
   fogColor: string;
   groundColor: string;
@@ -209,12 +212,11 @@ function GameLoop({
       const headVec = { x: head.x, y: head.y, z: head.z };
       if (collision.grid) {
         const t = raycastGrid(collision.grid, headVec, backVec, dist);
-        if (t !== null && t > 0) dist = Math.max(1, t - 0.3);
-      } else {
-        for (const box of collision.colliders) {
-          const t = rayAABB(headVec, backVec, box);
-          if (t !== null && t > 0 && t < dist) dist = Math.max(1, t - 0.3);
-        }
+        if (t !== null && t > 0 && t < dist) dist = Math.max(1, t - 0.3);
+      }
+      for (const box of collision.colliders) {
+        const t = rayAABB(headVec, backVec, box);
+        if (t !== null && t > 0 && t < dist) dist = Math.max(1, t - 0.3);
       }
       const camPos = head.clone().add(back.multiplyScalar(dist));
       // Never let the third-person camera dip below the floor.
@@ -470,6 +472,7 @@ export function GameScene({
         ) : scene.mapModelUrl ? (
           <MapModel url={scene.mapModelUrl} />
         ) : null}
+        {scene.props.length > 0 && <MapProps props={scene.props} />}
         <Players client={client} controls={controls} />
         <FirstPersonViewmodel client={client} controls={controls} />
       </Suspense>

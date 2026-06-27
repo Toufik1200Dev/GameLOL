@@ -11,7 +11,7 @@
  *
  * Run: `node scripts/build-map-colliders.mjs`
  */
-import { existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NodeIO } from '@gltf-transform/core';
@@ -28,7 +28,9 @@ import {
 } from '@gltf-transform/functions';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MAPS_DIR = resolve(__dirname, '../apps/web/public/assets/maps');
+const ASSETS_DIR = resolve(__dirname, '../apps/web/public/assets');
+const MAPS_DIR = join(ASSETS_DIR, 'maps');
+const PROPS_DIR = join(ASSETS_DIR, 'props');
 
 const CELL_SIZE = 1.0; // metres per voxel
 const MAX_TRI_SAMPLES = 64; // per-triangle surface sampling cap
@@ -36,6 +38,12 @@ const SPAWN_HEADROOM = 4; // empty cells required above a spawn floor
 const PLAY_HEIGHT_CAP = 36; // metres of collision above the floor (bounds the grid)
 const MAP_TARGET_SIZE = 250; // scale oversized maps so their footprint ≈ this
 const MAP_SCALE_THRESHOLD = 400; // only rescale maps bigger than this
+const PROP_TARGET_SIZE = 4.6; // scale a prop so its footprint ≈ this (≈ a car)
+
+const readJson = (file) => {
+  const text = readFileSync(file, 'utf8');
+  return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+};
 
 // ---- tiny mat4 (column-major) ----
 const composeTRS = (t, q, s) => {
@@ -100,12 +108,9 @@ async function loadSharp() {
   }
 }
 
-async function processMap(id, folder) {
+async function processMap(id, folder, props = {}) {
   const glbPath = join(folder, 'map.glb');
-  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({
-    'draco3d.encoder': await draco3d.createEncoderModule(),
-    'draco3d.decoder': await draco3d.createDecoderModule(),
-  });
+  const io = await makeIO();
   console.log(`[map] ${id}: reading map.glb`);
   const doc = await io.read(glbPath);
 
@@ -327,6 +332,51 @@ async function processMap(id, folder) {
     blue: toSpawn(nearest4(bandCx + SEP), Math.PI / 2),
   };
 
+  // 5) Props (cover): scatter the map config's props across the floor, spread out
+  //    and away from spawns, each with a collider box so players can hide behind.
+  const cfg = existsSync(join(folder, 'config.json')) ? readJson(join(folder, 'config.json')) : {};
+  const spawnPts = [...spawns.red, ...spawns.blue].map((s) => s.position);
+  // Keep props on the SAME floor level as the spawns (the main play floor), not
+  // the high tiers/seating, and spaced away from spawn points.
+  const spawnFloorY = (spawns.red[0]?.position.y ?? groundY + 0.1) - 0.1;
+  const propCandidates = all.filter(
+    (p) =>
+      p.h >= 2 &&
+      Math.abs(p.y - spawnFloorY) < 4 &&
+      spawnPts.every((s) => Math.hypot(s.x - p.x, s.z - p.z) > 12),
+  );
+  const propColliders = [];
+  const propInstances = [];
+  const placed = [];
+  for (const spec of cfg.props ?? []) {
+    const prop = props[spec.id];
+    if (!prop) {
+      console.warn(`[map] ${id}: prop '${spec.id}' not found — skipping`);
+      continue;
+    }
+    for (let i = 0; i < (spec.count ?? 1); i++) {
+      // Farthest-point pick for good spread across the floor.
+      let pick = null;
+      let bestD = -1;
+      for (const c of propCandidates) {
+        const d = placed.length
+          ? Math.min(...placed.map((q) => Math.hypot(q.x - c.x, q.z - c.z)))
+          : Math.hypot(c.x - bandCx, c.z - z0);
+        if (d > bestD) [bestD, pick] = [d, c];
+      }
+      if (!pick) break;
+      placed.push(pick);
+      const rot = (placed.length % 2) * (Math.PI / 2);
+      const ex = rot === 0 ? prop.size.x : prop.size.z;
+      const ez = rot === 0 ? prop.size.z : prop.size.x;
+      propInstances.push({ model: prop.model, x: pick.x, y: pick.y, z: pick.z, rotationY: rot });
+      propColliders.push({
+        min: { x: pick.x - ex / 2, y: pick.y, z: pick.z - ez / 2 },
+        max: { x: pick.x + ex / 2, y: pick.y + prop.size.y, z: pick.z + ez / 2 },
+      });
+    }
+  }
+
   const out = {
     cellSize: CELL_SIZE,
     origin: { x: origin[0], y: origin[1], z: origin[2] },
@@ -335,21 +385,102 @@ async function processMap(id, folder) {
     bounds: { min: { x: min[0], z: min[2] }, max: { x: max[0], z: max[2] } },
     solid: Buffer.from(solid).toString('base64'),
     spawns,
+    colliders: propColliders,
+    props: propInstances,
   };
   writeFileSync(join(folder, 'colliders.json'), JSON.stringify(out));
   console.log(
-    `[map] ${id}: grid ${nx}x${ny}x${nz} (${solidCount} solid cells), ` +
+    `[map] ${id}: grid ${nx}x${ny}x${nz} (${solidCount} solid cells), ${propInstances.length} props, ` +
       `${triangles.length / 3} tris, bounds ${(max[0] - min[0]).toFixed(0)}x${(max[2] - min[2]).toFixed(0)}`,
   );
 }
 
+/** Create a draco-capable glTF IO. */
+async function makeIO() {
+  return new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({
+    'draco3d.encoder': await draco3d.createEncoderModule(),
+    'draco3d.decoder': await draco3d.createDecoderModule(),
+  });
+}
+
+/**
+ * Process a prop GLB (e.g. a car): clean/compress, scale to a sensible size, and
+ * recenter so its base sits at y=0 centred on the origin (so it can be placed on
+ * a floor). Writes prop.json with its final size.
+ */
+async function processProp(id, folder) {
+  const glbPath = join(folder, 'prop.glb');
+  const jsonPath = join(folder, 'prop.json');
+  const io = await makeIO();
+  const doc = await io.read(glbPath);
+
+  if (!existsSync(jsonPath)) {
+    const usedExts = doc
+      .getRoot()
+      .listExtensionsUsed()
+      .map((e) => e.extensionName);
+    const sharp = await loadSharp();
+    const transforms = [];
+    if (usedExts.includes('KHR_materials_pbrSpecularGlossiness')) transforms.push(metalRough());
+    transforms.push(dedup(), prune());
+    if (sharp) {
+      transforms.push(
+        textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [1024, 1024] }),
+      );
+    }
+    if (!usedExts.includes('KHR_draco_mesh_compression')) transforms.push(weld(), draco());
+    if (transforms.length) await doc.transform(...transforms);
+
+    const scene = doc.getRoot().listScenes()[0];
+    // Scale to ~PROP_TARGET_SIZE footprint.
+    let b = getBounds(scene);
+    const horiz = Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]);
+    const s = horiz > 0 ? PROP_TARGET_SIZE / horiz : 1;
+    for (const node of scene.listChildren()) {
+      node.setTranslation(node.getTranslation().map((v) => v * s));
+      node.setScale(node.getScale().map((v) => v * s));
+    }
+    // Recenter: base at y=0, centred on x/z.
+    b = getBounds(scene);
+    const cx = (b.min[0] + b.max[0]) / 2;
+    const cz = (b.min[2] + b.max[2]) / 2;
+    const minY = b.min[1];
+    for (const node of scene.listChildren()) {
+      const t = node.getTranslation();
+      node.setTranslation([t[0] - cx, t[1] - minY, t[2] - cz]);
+    }
+    await io.write(glbPath, doc);
+    console.log(`[prop] ${id}: processed (scale ${s.toFixed(4)})`);
+  }
+
+  const b = getBounds(doc.getRoot().listScenes()[0]);
+  const info = {
+    model: `/assets/props/${id}/prop.glb`,
+    size: { x: b.max[0] - b.min[0], y: b.max[1] - b.min[1], z: b.max[2] - b.min[2] },
+  };
+  writeFileSync(jsonPath, JSON.stringify(info));
+  return info;
+}
+
+async function loadProps() {
+  const props = {};
+  if (!existsSync(PROPS_DIR)) return props;
+  for (const id of readdirSync(PROPS_DIR)) {
+    const folder = join(PROPS_DIR, id);
+    if (!statSync(folder).isDirectory() || !existsSync(join(folder, 'prop.glb'))) continue;
+    props[id] = await processProp(id, folder);
+  }
+  return props;
+}
+
 async function main() {
   if (!existsSync(MAPS_DIR)) return;
+  const props = await loadProps();
   for (const id of readdirSync(MAPS_DIR)) {
     const folder = join(MAPS_DIR, id);
     if (!statSync(folder).isDirectory()) continue;
     if (!existsSync(join(folder, 'map.glb'))) continue;
-    await processMap(id, folder);
+    await processMap(id, folder, props);
   }
 }
 

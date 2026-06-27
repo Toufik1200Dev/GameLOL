@@ -11,6 +11,15 @@ import type { Vec3 } from '../math/vec3';
 import type { SpawnPoint } from './worldgen';
 import type { TeamId } from '../types/lobby';
 
+/** A placed cover prop (e.g. a car) with a render transform. */
+export interface PropInstance {
+  model: string;
+  x: number;
+  y: number;
+  z: number;
+  rotationY: number;
+}
+
 /** Raw shape of a map's `colliders.json`. */
 export interface MapColliderData {
   cellSize: number;
@@ -21,6 +30,10 @@ export interface MapColliderData {
   /** base64-encoded Uint8Array of length nx*ny*nz (1 = solid). */
   solid: string;
   spawns: Record<TeamId, SpawnPoint[]>;
+  /** Extra static AABB colliders (prop cover boxes). */
+  colliders?: AABB[];
+  /** Renderable cover props placed on the map. */
+  props?: PropInstance[];
 }
 
 export interface GridCollision {

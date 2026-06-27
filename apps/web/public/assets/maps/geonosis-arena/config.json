@@ -3,5 +3,6 @@
   "description": "Open execution arena.",
   "skyColor": "#caa46a",
   "fogColor": "#b98f57",
-  "propDensity": 0
+  "propDensity": 0,
+  "props": [{ "id": "bmw-m4", "count": 5 }]
 }

@@ -150,13 +150,13 @@ export class GameInstance {
     this.onEnd = onEnd;
 
     if (mapData) {
-      // GLB map: voxel-grid collision + explicit play-area box + map spawns.
+      // GLB map: voxel-grid collision + prop colliders + play-area box + spawns.
       this.grid = buildGridCollision(mapData);
-      this.worldColliders = [];
+      this.worldColliders = mapData.colliders ?? [];
       this.spawns = mapData.spawns;
       this.groundY = mapData.groundY;
       this.collisionWorld = {
-        colliders: [],
+        colliders: this.worldColliders,
         grid: this.grid,
         groundY: mapData.groundY,
         bounds: 0,
@@ -261,13 +261,13 @@ export class GameInstance {
     p.inputQueue.push(input);
   }
 
-  /** Nearest static-world hit distance along a ray (voxel grid or AABB list). */
+  /** Nearest static-world hit distance along a ray (voxel grid + AABB colliders). */
   private worldRayDistance(origin: Vec3, dir: Vec3, maxDist: number): number {
-    if (this.grid) {
-      const t = raycastGrid(this.grid, origin, dir, maxDist);
-      return t ?? maxDist;
-    }
     let nearest = maxDist;
+    if (this.grid) {
+      const t = raycastGrid(this.grid, origin, dir, nearest);
+      if (t !== null && t < nearest) nearest = t;
+    }
     for (const box of this.worldColliders) {
       const t = rayAABB(origin, dir, box);
       if (t !== null && t < nearest) nearest = t;

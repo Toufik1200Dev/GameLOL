@@ -27,6 +27,7 @@ import { NetGameClient } from '../../game/net/NetGameClient';
 import { GameScene, type SceneInfo } from '../r3f/GameScene';
 import { GameErrorBoundary } from '../r3f/GameErrorBoundary';
 import { HUD } from '../game/HUD';
+import { TouchControls } from '../game/TouchControls';
 import { LoadingScreen } from './LoadingScreen';
 import { Button, Panel } from '../ui/primitives';
 
@@ -56,6 +57,11 @@ export function GameScreen() {
   const scoreboardOpen = useGameStore((s) => s.scoreboardOpen);
 
   const [setup, setSetup] = useState<MatchSetup | null>(null);
+  const [isTouch] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      ('ontouchstart' in window || navigator.maxTouchPoints > 0),
+  );
   const controls = useGameControls(0);
 
   // Resolve the map (procedural or GLB), fetch its collider data, and build the
@@ -86,7 +92,7 @@ export function GameScreen() {
         const sizeZ = data.bounds.max.z - data.bounds.min.z;
         worldSize = Math.max(sizeX, sizeZ) / 2;
         collision = {
-          colliders: [],
+          colliders: data.colliders ?? [],
           grid,
           groundY: data.groundY,
           bounds: 0,
@@ -102,6 +108,7 @@ export function GameScreen() {
           collision,
           proceduralWorld: null,
           mapModelUrl: mapEntry.model,
+          props: data.props ?? [],
           skyColor: mapEntry.config.skyColor,
           fogColor: mapEntry.config.fogColor,
           groundColor: '#5fae54',
@@ -118,6 +125,7 @@ export function GameScreen() {
           collision,
           proceduralWorld: world,
           mapModelUrl: null,
+          props: [],
           skyColor: world.skyColor,
           fogColor: world.fogColor,
           groundColor: world.groundColor,
@@ -200,7 +208,10 @@ export function GameScreen() {
     setScreen('lobby');
   };
 
-  const resume = () => containerRef.current?.requestPointerLock?.();
+  const resume = () => {
+    useGameStore.getState().setPaused(false);
+    if (!isTouch) containerRef.current?.requestPointerLock?.();
+  };
 
   return (
     <div ref={containerRef} className="relative h-full w-full bg-black">
@@ -209,8 +220,11 @@ export function GameScreen() {
       </GameErrorBoundary>
       <HUD worldSize={setup.worldSize} />
 
-      {/* Click-to-play prompt */}
-      {!locked && !paused && !ended && (
+      {/* On-screen controls for touch devices */}
+      {isTouch && !paused && !ended && <TouchControls controls={controls} />}
+
+      {/* Click-to-play prompt (desktop pointer-lock only) */}
+      {!isTouch && !locked && !paused && !ended && (
         <div
           className="absolute inset-0 flex cursor-pointer items-center justify-center"
           onClick={() => containerRef.current?.requestPointerLock?.()}

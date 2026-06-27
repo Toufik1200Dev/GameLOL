@@ -94,19 +94,18 @@ function CharacterModelInner({
     );
   }, [actions, names, config.animations]);
 
-  const currentClip = useRef<string | null>(null);
-  const playClip = (name: string | null) => {
-    if (currentClip.current === name) return;
-    const prev = currentClip.current ? actions[currentClip.current] : null;
-    prev?.fadeOut(0.2);
-    if (name && actions[name]) actions[name].reset().fadeIn(0.2).play();
-    currentClip.current = name;
-  };
-
-  // Play the locomotion clip while moving; stand still (no animation) otherwise.
+  // Play the locomotion clip while moving; FREEZE it on the current frame when
+  // stopped (the character holds its pose) — no idle/dance animation.
+  const started = useRef(false);
   useFrame(() => {
+    const action = moveName ? actions[moveName] : null;
+    if (!action) return;
     const moving = isMoving?.() ?? false;
-    playClip(moving ? moveName : null);
+    if (moving && !started.current) {
+      action.play();
+      started.current = true;
+    }
+    if (started.current) action.paused = !moving;
   });
 
   // Auto-fit: scale to player height, centre on X/Z, drop feet to y=0.
