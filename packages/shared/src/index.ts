@@ -8,6 +8,19 @@
  * the server) with `moduleResolution: "Bundler"`.
  */
 
+// Constants & primitives
 export * from './constants';
 export * from './math/vec3';
 export * from './rng/seeded';
+
+// Domain types
+export * from './types/lobby';
+
+// Config defaults
+export * from './config/defaults';
+
+// Networking protocol
+export * from './protocol/events';
+
+// Utilities
+export * from './util/roomCode';

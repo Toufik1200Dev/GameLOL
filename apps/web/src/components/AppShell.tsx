@@ -1,0 +1,57 @@
+'use client';
+
+/**
+ * Root client shell. Mounts the socket connection once, renders the active
+ * screen from the UI state machine, and overlays the toast system. Screens are
+ * cross-faded with Framer Motion.
+ */
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useSocketConnection } from '../hooks/useSocketConnection';
+import { useUIStore, type Screen } from '../stores/uiStore';
+import { Toasts } from './ui/Toasts';
+import { LoadingScreen } from './screens/LoadingScreen';
+import { MainMenu } from './screens/MainMenu';
+import { SettingsScreen } from './screens/SettingsScreen';
+import { LobbyScreen } from './screens/LobbyScreen';
+import { GamePlaceholder } from './screens/GamePlaceholder';
+
+const SCREENS: Record<Screen, React.ComponentType> = {
+  menu: MainMenu,
+  settings: SettingsScreen,
+  lobby: LobbyScreen,
+  characterSelect: MainMenu, // Phase 2
+  weaponSelect: MainMenu, // Phase 2
+  game: GamePlaceholder, // Phase 3
+};
+
+export function AppShell() {
+  useSocketConnection();
+  const screen = useUIStore((s) => s.screen);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // Render the splash on the server and until the client mounts so persisted /
+  // socket-driven state never causes a hydration mismatch.
+  if (!mounted) return <LoadingScreen />;
+
+  const ActiveScreen = SCREENS[screen];
+
+  return (
+    <div className="relative h-full w-full overflow-hidden">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={screen}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.25 }}
+          className="h-full w-full"
+        >
+          <ActiveScreen />
+        </motion.div>
+      </AnimatePresence>
+      <Toasts />
+    </div>
+  );
+}

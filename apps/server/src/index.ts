@@ -1,15 +1,22 @@
 /**
  * Server bootstrap: HTTP (Express) for health/diagnostics + Socket.IO for the
- * authoritative real-time layer. Lobby and game systems are attached in later
- * phases via `attachSocketHandlers`.
+ * authoritative real-time layer. Lobby handling is attached via
+ * `attachSocketHandlers`; the game simulation layer plugs in here in Phase 3.
  */
 import { createServer } from 'node:http';
 import express from 'express';
 import cors from 'cors';
 import { Server as SocketIOServer } from 'socket.io';
-import { TICK_RATE } from '@game/shared';
+import {
+  TICK_RATE,
+  type ClientToServerEvents,
+  type InterServerEvents,
+  type ServerToClientEvents,
+  type SocketData,
+} from '@game/shared';
 import { env } from './env';
 import { logger } from './logger';
+import { attachSocketHandlers } from './net/socketHandlers';
 
 const app = express();
 app.use(cors({ origin: env.clientOrigin }));
@@ -26,18 +33,17 @@ app.get('/', (_req, res) => {
 
 const httpServer = createServer(app);
 
-const io = new SocketIOServer(httpServer, {
+const io = new SocketIOServer<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  InterServerEvents,
+  SocketData
+>(httpServer, {
   cors: { origin: env.clientOrigin, methods: ['GET', 'POST'] },
-  // WebSocket-first; allow polling fallback for restrictive networks.
   transports: ['websocket', 'polling'],
 });
 
-io.on('connection', (socket) => {
-  logger.debug(`socket connected: ${socket.id}`);
-  socket.on('disconnect', (reason) => {
-    logger.debug(`socket disconnected: ${socket.id} (${reason})`);
-  });
-});
+attachSocketHandlers(io);
 
 httpServer.listen(env.port, () => {
   logger.info(`Server listening on :${env.port} (env=${env.nodeEnv}, tick=${TICK_RATE}Hz)`);
@@ -50,7 +56,6 @@ const shutdown = (signal: string): void => {
   logger.info(`Received ${signal}, shutting down...`);
   io.close();
   httpServer.close(() => process.exit(0));
-  // Force-exit if connections linger.
   setTimeout(() => process.exit(1), 5000).unref();
 };
 
