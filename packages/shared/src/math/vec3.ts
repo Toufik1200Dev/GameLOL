@@ -68,5 +68,4 @@ export const wrapAngle = (radians: number): number => {
 };
 
 /** Shortest-path angular interpolation (radians). */
-export const lerpAngle = (a: number, b: number, t: number): number =>
-  a + wrapAngle(b - a) * t;
+export const lerpAngle = (a: number, b: number, t: number): number => a + wrapAngle(b - a) * t;

@@ -187,7 +187,8 @@ export function LobbyScreen() {
   const lobby = useLobbyStore((s) => s.lobby);
   const playerId = useLobbyStore((s) => s.playerId);
   const isHost = useLobbyStore((s) => s.isHost());
-  const { leaveLobby, closeLobby, startGame, setReady, selectTeam, kick } = useLobbyStore.getState();
+  const { leaveLobby, closeLobby, startGame, setReady, selectTeam, kick } =
+    useLobbyStore.getState();
   const pushToast = useUIStore((s) => s.pushToast);
   const setScreen = useUIStore((s) => s.setScreen);
   const loadManifest = useAssetStore((s) => s.load);
@@ -209,8 +210,7 @@ export function LobbyScreen() {
   if (!lobby) return null;
 
   const self = lobby.players.find((p) => p.id === playerId) ?? null;
-  const canStart =
-    lobby.players.length >= 1 && lobby.players.every((p) => p.isHost || p.ready);
+  const canStart = lobby.players.length >= 1 && lobby.players.every((p) => p.isHost || p.ready);
 
   const copyCode = async () => {
     try {

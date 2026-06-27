@@ -69,7 +69,8 @@ function scanCategory(categoryKey, requiredFiles) {
     if (existsSync(join(folder, 'icon.png'))) entry.icon = `${basePath}/icon.png`;
     if (categoryKey === 'characters') {
       entry.model = `${basePath}/model.glb`;
-      if (existsSync(join(folder, 'animations.glb'))) entry.animations = `${basePath}/animations.glb`;
+      if (existsSync(join(folder, 'animations.glb')))
+        entry.animations = `${basePath}/animations.glb`;
     }
     if (categoryKey === 'weapons') entry.model = `${basePath}/weapon.glb`;
     if (categoryKey === 'maps' && existsSync(join(folder, 'preview.png'))) {

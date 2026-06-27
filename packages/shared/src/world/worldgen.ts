@@ -194,7 +194,14 @@ export function generateWorld(seed: string, options: WorldGenOptions = {}): Gene
     const x = rng.range(-bounds, bounds);
     const z = rng.range(-bounds, bounds);
     const s = rng.range(0.8, 1.8);
-    addBox('rock', { x, y: s / 2, z }, { x: s, y: s, z: s }, rng.pick(ROCK_COLORS), true, rng.range(0, Math.PI));
+    addBox(
+      'rock',
+      { x, y: s / 2, z },
+      { x: s, y: s, z: s },
+      rng.pick(ROCK_COLORS),
+      true,
+      rng.range(0, Math.PI),
+    );
   }
 
   // --- Perimeter mountains (visual only) ---
@@ -206,7 +213,7 @@ export function generateWorld(seed: string, options: WorldGenOptions = {}): Gene
     const w = rng.range(14, 24);
     addBox(
       'mountain',
-      { x: Math.cos(angle) * radius, y: h / 2 - 2, z: Math.sin(angle) * radius, },
+      { x: Math.cos(angle) * radius, y: h / 2 - 2, z: Math.sin(angle) * radius },
       { x: w, y: h, z: w },
       '#6f7d8c',
       false,

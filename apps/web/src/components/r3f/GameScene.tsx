@@ -159,7 +159,11 @@ function GameLoop({
       client.render.position.z,
     );
     const sprinting = c.sprint && c.moveZ > 0 && !c.aim;
-    const targetFov = c.aim ? baseFov.current * 0.7 : sprinting ? baseFov.current * 1.08 : baseFov.current;
+    const targetFov = c.aim
+      ? baseFov.current * 0.7
+      : sprinting
+        ? baseFov.current * 1.08
+        : baseFov.current;
     camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, 1 - Math.exp(-10 * dt));
     camera.updateProjectionMatrix();
 

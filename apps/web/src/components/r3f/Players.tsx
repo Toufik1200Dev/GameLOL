@@ -98,7 +98,10 @@ function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
 export function Players({ client, controls }: { client: NetGameClient; controls: ControlsRef }) {
   // Re-render only when the set of remote ids changes (not per frame).
   const remoteIds = useGameStore((s) =>
-    s.roster.filter((p) => p.id !== client.selfId).map((p) => p.id).join(','),
+    s.roster
+      .filter((p) => p.id !== client.selfId)
+      .map((p) => p.id)
+      .join(','),
   );
   const ids = useMemo(() => (remoteIds ? remoteIds.split(',') : []), [remoteIds]);
 

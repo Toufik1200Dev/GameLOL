@@ -47,12 +47,16 @@ export function JoinLobbyModal({ open, onClose }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-display text-2xl font-semibold">Join Lobby</h2>
-            <p className="mt-1 text-sm text-white/50">Enter the {ROOM_CODE_LENGTH}-character code.</p>
+            <p className="mt-1 text-sm text-white/50">
+              Enter the {ROOM_CODE_LENGTH}-character code.
+            </p>
 
             <input
               autoFocus
               value={code}
-              onChange={(e) => setCode(normalizeRoomCode(e.target.value).slice(0, ROOM_CODE_LENGTH))}
+              onChange={(e) =>
+                setCode(normalizeRoomCode(e.target.value).slice(0, ROOM_CODE_LENGTH))
+              }
               onKeyDown={(e) => e.key === 'Enter' && submit()}
               placeholder="A4HF9P"
               className="font-display bg-bg-elevated border-border focus:border-accent mt-5 w-full rounded-xl border px-4 py-4 text-center text-3xl font-bold uppercase tracking-[0.4em] text-white outline-none"

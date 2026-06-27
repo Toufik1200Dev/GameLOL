@@ -8,12 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import {
-  DEFAULT_MAX_HEARTS,
-  generateWorld,
-  type TeamId,
-  type Vec3,
-} from '@game/shared';
+import { DEFAULT_MAX_HEARTS, generateWorld, type TeamId, type Vec3 } from '@game/shared';
 import { getSocket } from '../../lib/socket';
 import { useLobbyStore } from '../../stores/lobbyStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -69,7 +64,12 @@ export function GameScreen() {
     const store = useGameStore.getState();
     store.resetMatch();
     store.setSelfId(playerId);
-    store.setHud({ maxHearts: DEFAULT_MAX_HEARTS, hearts: DEFAULT_MAX_HEARTS, ammo: 30, magazine: 30 });
+    store.setHud({
+      maxHearts: DEFAULT_MAX_HEARTS,
+      hearts: DEFAULT_MAX_HEARTS,
+      ammo: 30,
+      magazine: 30,
+    });
 
     const onSnapshot = setup.client.onSnapshot.bind(setup.client);
     socket.on('game:snapshot', onSnapshot);
@@ -135,8 +135,8 @@ export function GameScreen() {
           <Panel className="px-8 py-6 text-center">
             <p className="font-display text-2xl font-bold">Click to play</p>
             <p className="mt-2 max-w-md text-xs text-white/50">
-              WASD move · Space jump · Shift sprint · C crouch · Left-click shoot · Right-click aim ·
-              R reload · V camera · Tab scoreboard · Esc pause
+              WASD move · Space jump · Shift sprint · C crouch · Left-click shoot · Right-click aim
+              · R reload · V camera · Tab scoreboard · Esc pause
             </p>
           </Panel>
         </div>

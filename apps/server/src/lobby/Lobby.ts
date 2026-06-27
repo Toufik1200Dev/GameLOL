@@ -142,7 +142,11 @@ export class Lobby {
   /** Apply a host settings patch with validation/clamping. */
   updateSettings(patch: Partial<LobbySettings>): void {
     const next = { ...this.settings, ...patch };
-    next.maxPlayers = clamp(Math.round(next.maxPlayers), Math.max(MIN_PLAYERS, this.size), HARD_MAX_PLAYERS);
+    next.maxPlayers = clamp(
+      Math.round(next.maxPlayers),
+      Math.max(MIN_PLAYERS, this.size),
+      HARD_MAX_PLAYERS,
+    );
     next.matchDurationSec = clamp(Math.round(next.matchDurationSec), 60, 3600);
     next.respawnDelaySec = clamp(Math.round(next.respawnDelaySec), 0, 30);
     next.scoreLimit = clamp(Math.round(next.scoreLimit), 1, 1000);

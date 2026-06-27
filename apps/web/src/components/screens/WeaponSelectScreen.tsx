@@ -80,7 +80,11 @@ export function WeaponSelectScreen() {
                   <div className="bg-bg-elevated h-20 w-full overflow-hidden rounded-lg">
                     {w.icon ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={w.icon} alt={w.config.name} className="h-full w-full object-cover" />
+                      <img
+                        src={w.icon}
+                        alt={w.config.name}
+                        className="h-full w-full object-cover"
+                      />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-2xl text-white/20">
                         ?

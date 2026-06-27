@@ -27,10 +27,12 @@ export const ANIMATION_STATES = [
 export type AnimationState = (typeof ANIMATION_STATES)[number];
 
 const animationMapSchema = z
-  .object(Object.fromEntries(ANIMATION_STATES.map((s) => [s, z.string()])) as Record<
-    AnimationState,
-    z.ZodString
-  >)
+  .object(
+    Object.fromEntries(ANIMATION_STATES.map((s) => [s, z.string()])) as Record<
+      AnimationState,
+      z.ZodString
+    >,
+  )
   .partial();
 
 export const characterConfigSchema = z.object({

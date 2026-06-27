@@ -31,9 +31,7 @@ export const viewport: Viewport = {
   themeColor: '#0a0e1a',
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${inter.variable} ${rajdhani.variable}`}>
       <body>

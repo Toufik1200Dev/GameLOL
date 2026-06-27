@@ -4,12 +4,7 @@
  * source of truth for every message that crosses the network — change it here
  * and both sides get compile errors until they agree.
  */
-import type {
-  GameStartPayload,
-  LobbySettings,
-  LobbyState,
-  TeamId,
-} from '../types/lobby';
+import type { GameStartPayload, LobbySettings, LobbyState, TeamId } from '../types/lobby';
 import type {
   GameSnapshot,
   HitEvent,

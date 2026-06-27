@@ -79,7 +79,11 @@ export class GameInstance {
   readonly code: string;
   private readonly io: GameServer;
   private readonly world: GeneratedWorld;
-  private readonly collisionWorld: { colliders: GeneratedWorld['colliders']; groundY: number; bounds: number };
+  private readonly collisionWorld: {
+    colliders: GeneratedWorld['colliders'];
+    groundY: number;
+    bounds: number;
+  };
   private readonly settings: LobbySettings;
   private readonly players = new Map<string, ServerPlayer>();
   private readonly onEnd: () => void;
@@ -124,7 +128,9 @@ export class GameInstance {
     this.startTime = Date.now();
     this.tickTimer = setInterval(() => this.step(), 1000 / TICK_RATE);
     this.snapshotTimer = setInterval(() => this.broadcast(), 1000 / SNAPSHOT_RATE);
-    logger.info(`game ${this.code}: started (${this.players.size} players, seed=${this.world.seed})`);
+    logger.info(
+      `game ${this.code}: started (${this.players.size} players, seed=${this.world.seed})`,
+    );
   }
 
   stop(): void {
@@ -224,7 +230,11 @@ export class GameInstance {
     // Closest hittable player in front of any wall.
     let victim: ServerPlayer | null = null;
     let victimT = nearestWorld;
-    let point: Vec3 = { x: origin.x + dir.x * victimT, y: origin.y + dir.y * victimT, z: origin.z + dir.z * victimT };
+    let point: Vec3 = {
+      x: origin.x + dir.x * victimT,
+      y: origin.y + dir.y * victimT,
+      z: origin.z + dir.z * victimT,
+    };
 
     for (const other of this.players.values()) {
       if (other.id === id || !other.alive) continue;
@@ -423,13 +433,19 @@ export class GameInstance {
     if (this.ended) return;
     this.ended = true;
     const winner: TeamId | 'draw' =
-      this.scores.red === this.scores.blue ? 'draw' : this.scores.red > this.scores.blue ? 'red' : 'blue';
+      this.scores.red === this.scores.blue
+        ? 'draw'
+        : this.scores.red > this.scores.blue
+          ? 'red'
+          : 'blue';
     this.io.to(this.code).emit('game:ended', {
       winner,
       scores: { ...this.scores },
       players: [...this.players.values()].map((p) => this.toNet(p)),
     });
-    logger.info(`game ${this.code}: ended (winner=${winner}, red=${this.scores.red}, blue=${this.scores.blue})`);
+    logger.info(
+      `game ${this.code}: ended (winner=${winner}, red=${this.scores.red}, blue=${this.scores.blue})`,
+    );
     this.stop();
     this.onEnd();
   }

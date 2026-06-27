@@ -104,7 +104,11 @@ export function SettingsScreen() {
               ))}
             </div>
           </div>
-          <Toggle checked={s.showFps} onChange={(v) => s.set('showFps', v)} label="Show FPS counter" />
+          <Toggle
+            checked={s.showFps}
+            onChange={(v) => s.set('showFps', v)}
+            label="Show FPS counter"
+          />
         </Panel>
       </motion.div>
     </div>

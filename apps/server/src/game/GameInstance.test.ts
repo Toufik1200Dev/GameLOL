@@ -63,7 +63,14 @@ interface Internals {
 function setup() {
   const sink: Emitted[] = [];
   const io = makeFakeIo(sink);
-  const game = new GameInstance(io, 'TEST01', 'seed', createDefaultLobbySettings(), roster(), () => {});
+  const game = new GameInstance(
+    io,
+    'TEST01',
+    'seed',
+    createDefaultLobbySettings(),
+    roster(),
+    () => {},
+  );
   const internals = game as unknown as Internals;
   // Clear world colliders so line-of-sight is unobstructed for the test.
   internals.world.colliders.length = 0;

@@ -55,9 +55,7 @@ interface PanelProps {
 
 export function Panel({ children, className = '' }: PanelProps) {
   return (
-    <div
-      className={`bg-panel/80 border-border rounded-2xl border backdrop-blur-md ${className}`}
-    >
+    <div className={`bg-panel/80 border-border rounded-2xl border backdrop-blur-md ${className}`}>
       {children}
     </div>
   );
