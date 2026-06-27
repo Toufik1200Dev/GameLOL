@@ -11,6 +11,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useSocketConnection } from '../hooks/useSocketConnection';
 import { useUIStore, type Screen } from '../stores/uiStore';
 import { Toasts } from './ui/Toasts';
+import { AppErrorBoundary } from './AppErrorBoundary';
 import { LoadingScreen } from './screens/LoadingScreen';
 import { MainMenu } from './screens/MainMenu';
 import { SettingsScreen } from './screens/SettingsScreen';
@@ -54,18 +55,20 @@ export function AppShell() {
 
   return (
     <div className="relative h-full w-full overflow-hidden">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={screen}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
-          className="h-full w-full"
-        >
-          <ActiveScreen />
-        </motion.div>
-      </AnimatePresence>
+      <AppErrorBoundary>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={screen}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="h-full w-full"
+          >
+            <ActiveScreen />
+          </motion.div>
+        </AnimatePresence>
+      </AppErrorBoundary>
       <Toasts />
     </div>
   );

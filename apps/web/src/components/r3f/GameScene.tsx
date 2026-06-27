@@ -7,7 +7,7 @@
  * tracer VFX and the FPS counter. Post-processing (tone mapping + bloom) is
  * gated by the graphics-quality setting.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Line, Sky } from '@react-three/drei';
 import * as THREE from 'three';
@@ -463,13 +463,16 @@ export function GameScene({
     >
       <color attach="background" args={[scene.skyColor]} />
       <SceneEnv scene={scene} />
-      {scene.proceduralWorld ? (
-        <World world={scene.proceduralWorld} />
-      ) : scene.mapModelUrl ? (
-        <MapModel url={scene.mapModelUrl} />
-      ) : null}
-      <Players client={client} controls={controls} />
-      <FirstPersonViewmodel client={client} controls={controls} />
+      {/* Asset-loading (suspending) content must sit under a Suspense boundary. */}
+      <Suspense fallback={null}>
+        {scene.proceduralWorld ? (
+          <World world={scene.proceduralWorld} />
+        ) : scene.mapModelUrl ? (
+          <MapModel url={scene.mapModelUrl} />
+        ) : null}
+        <Players client={client} controls={controls} />
+        <FirstPersonViewmodel client={client} controls={controls} />
+      </Suspense>
       <GameLoop client={client} collision={scene.collision} controls={controls} pool={pool} />
       <Tracers pool={pool} />
       <CombatVFX />
