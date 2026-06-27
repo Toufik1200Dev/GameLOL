@@ -8,6 +8,12 @@ const nextConfig = {
   experimental: {
     optimizePackageImports: ['@react-three/drei', 'three'],
   },
+  // The /api/assets/manifest route scans public/assets from disk at request
+  // time. On serverless hosts (Vercel) the public dir isn't on the function's
+  // filesystem, so bundle the asset folders into that function explicitly.
+  outputFileTracingIncludes: {
+    '/api/assets/manifest': ['./public/assets/**/*'],
+  },
   eslint: {
     // Lint is run explicitly via `pnpm lint`; don't fail production builds on it.
     ignoreDuringBuilds: true,
