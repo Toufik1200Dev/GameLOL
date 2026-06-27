@@ -39,6 +39,7 @@ export interface SceneInfo {
   collision: CollisionWorld;
   proceduralWorld: GeneratedWorld | null;
   mapModelUrl: string | null;
+  mapModelOffsetY: number;
   props: PropInstance[];
   skyColor: string;
   fogColor: string;
@@ -483,7 +484,7 @@ export function GameScene({
         {scene.proceduralWorld ? (
           <World world={scene.proceduralWorld} />
         ) : scene.mapModelUrl ? (
-          <MapModel url={scene.mapModelUrl} />
+          <MapModel url={scene.mapModelUrl} offsetY={scene.mapModelOffsetY} />
         ) : null}
         {scene.props.length > 0 && <MapProps props={scene.props} />}
         <Players client={client} controls={controls} />

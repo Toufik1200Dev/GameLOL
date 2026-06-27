@@ -95,6 +95,12 @@ export const mapConfigSchema = z.object({
   skyColor: z.string().default('#67b6ff'),
   /** 0..1 multiplier for prop scattering density. */
   propDensity: z.number().min(0).max(1).default(0.6),
+  /**
+   * Vertical offset (metres) applied to the RENDERED GLB map model only (not
+   * collision). Negative moves the visuals down so players sit on/above the
+   * floor instead of appearing sunk into it. Tune per map.
+   */
+  modelOffsetY: z.number().default(0),
 });
 
 export type MapConfig = z.infer<typeof mapConfigSchema>;

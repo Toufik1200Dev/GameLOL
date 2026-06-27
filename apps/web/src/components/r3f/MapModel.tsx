@@ -10,7 +10,7 @@ import { useEffect } from 'react';
 import { useGLTF } from '@react-three/drei';
 import type { Mesh } from 'three';
 
-export function MapModel({ url }: { url: string }) {
+export function MapModel({ url, offsetY = 0 }: { url: string; offsetY?: number }) {
   const { scene } = useGLTF(url);
 
   useEffect(() => {
@@ -23,5 +23,7 @@ export function MapModel({ url }: { url: string }) {
     });
   }, [scene]);
 
-  return <primitive object={scene} />;
+  // Visual-only vertical offset (collision uses the unshifted GLB). Lets a map
+  // sit lower so players rest on the floor instead of appearing sunk into it.
+  return <primitive object={scene} position={[0, offsetY, 0]} />;
 }
