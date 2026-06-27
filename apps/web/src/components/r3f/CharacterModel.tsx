@@ -13,7 +13,7 @@
  * all without code. A failed/absent model falls back to the capsule (characters)
  * or renders nothing (weapons).
  */
-import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { Component, Suspense, useMemo, useRef, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -84,11 +84,8 @@ function CharacterModelInner({
   const clips = animationsUrl ? animGltf.animations : embedded;
   const { actions, names } = useAnimations(clips, ref);
 
-  // Resolve idle + locomotion clips (by config name, else by common naming).
-  const idleName = useMemo(() => {
-    if (config.animations.idle && actions[config.animations.idle]) return config.animations.idle;
-    return names.find((n) => /idle/i.test(n)) ?? names[0] ?? null;
-  }, [actions, names, config.animations]);
+  // Only a locomotion clip is used — no idle/dance animation. Resolve it by
+  // config name, else by common naming.
   const moveName = useMemo(() => {
     if (config.animations.run && actions[config.animations.run]) return config.animations.run;
     if (config.animations.walk && actions[config.animations.walk]) return config.animations.walk;
@@ -99,24 +96,17 @@ function CharacterModelInner({
 
   const currentClip = useRef<string | null>(null);
   const playClip = (name: string | null) => {
-    if (!name || currentClip.current === name) return;
-    const next = actions[name];
-    if (!next) return;
+    if (currentClip.current === name) return;
     const prev = currentClip.current ? actions[currentClip.current] : null;
-    next.reset().fadeIn(0.2).play();
     prev?.fadeOut(0.2);
+    if (name && actions[name]) actions[name].reset().fadeIn(0.2).play();
     currentClip.current = name;
   };
 
-  useEffect(() => {
-    playClip(idleName);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idleName]);
-
-  // Switch to the locomotion clip while moving, idle otherwise.
+  // Play the locomotion clip while moving; stand still (no animation) otherwise.
   useFrame(() => {
     const moving = isMoving?.() ?? false;
-    playClip(moving && moveName ? moveName : idleName);
+    playClip(moving ? moveName : null);
   });
 
   // Auto-fit: scale to player height, centre on X/Z, drop feet to y=0.
