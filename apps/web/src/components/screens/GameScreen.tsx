@@ -79,7 +79,7 @@ export function GameScreen() {
       if (mapEntry?.model && mapEntry.colliders) {
         // GLB map: fetch voxel colliders, render the model.
         const data = (await (
-          await fetch(mapEntry.colliders, { cache: 'force-cache' })
+          await fetch(mapEntry.colliders, { cache: 'no-cache' })
         ).json()) as MapColliderData;
         const grid = buildGridCollision(data);
         const sizeX = data.bounds.max.x - data.bounds.min.x;
