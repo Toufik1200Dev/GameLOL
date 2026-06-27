@@ -206,7 +206,7 @@ function GameLoop({
       camera.position.copy(head);
       camera.lookAt(head.clone().add(dir));
     } else {
-      let dist = c.aim ? 2.2 : 4.6;
+      let dist = c.aim ? 2.4 : 5.4;
       const back = dir.clone().multiplyScalar(-1);
       const backVec = { x: back.x, y: back.y, z: back.z };
       const headVec = { x: head.x, y: head.y, z: head.z };
@@ -218,11 +218,24 @@ function GameLoop({
         const t = rayAABB(headVec, backVec, box);
         if (t !== null && t > 0 && t < dist) dist = Math.max(1, t - 0.3);
       }
+      // Lift the camera onto a boom above the head so the view frames the floor
+      // (not the looming walls), then look down toward the player. Clamp the
+      // lift with an upward ray so it never clips through a low ceiling indoors.
+      let lift = c.aim ? 0.6 : 1.7;
+      if (collision.grid) {
+        const tu = raycastGrid(collision.grid, headVec, { x: 0, y: 1, z: 0 }, lift + 0.5);
+        if (tu !== null && tu > 0) lift = Math.max(0, tu - 0.4);
+      }
       const camPos = head.clone().add(back.multiplyScalar(dist));
+      camPos.y += lift;
       // Never let the third-person camera dip below the floor.
       camPos.y = Math.max(camPos.y, collision.groundY + 0.6);
       camera.position.lerp(camPos, 1 - Math.exp(-30 * dt));
-      camera.lookAt(head.clone().add(dir.clone().multiplyScalar(8)));
+      // Aim the look slightly below the pure aim line so the elevated camera
+      // tilts down over the player and shows more ground.
+      const lookTarget = head.clone().add(dir.clone().multiplyScalar(8));
+      lookTarget.y -= lift * 0.5;
+      camera.lookAt(lookTarget);
     }
 
     // 4) shooting + reload — resolve the local player's selected weapon stats.
