@@ -16,8 +16,10 @@ export * from './rng/seeded';
 // Domain types
 export * from './types/lobby';
 
-// Config defaults
+// Config defaults + schemas + manifest types
 export * from './config/defaults';
+export * from './config/schemas';
+export * from './config/manifest';
 
 // Networking protocol
 export * from './protocol/events';

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   HARD_MAX_PLAYERS,
@@ -11,7 +11,18 @@ import {
 } from '@game/shared';
 import { useLobbyStore } from '../../stores/lobbyStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useAssetStore } from '../../stores/assetStore';
 import { Button, Panel, Slider, Toggle } from '../ui/primitives';
+
+/** Resolve asset ids → display names for the roster + loadout UI. */
+function useAssetNames() {
+  const manifest = useAssetStore((s) => s.manifest);
+  return useMemo(() => {
+    const characters = new Map(manifest.characters.map((c) => [c.id, c.config.name]));
+    const weapons = new Map(manifest.weapons.map((w) => [w.id, w.config.name]));
+    return { characters, weapons };
+  }, [manifest]);
+}
 
 const TEAM_LABEL: Record<TeamId, string> = { red: 'Red Team', blue: 'Blue Team' };
 const TEAM_ACCENT: Record<TeamId, string> = {
@@ -32,11 +43,13 @@ function PlayerRow({
   isSelf,
   canKick,
   onKick,
+  loadout,
 }: {
   player: PlayerPublic;
   isSelf: boolean;
   canKick: boolean;
   onKick: () => void;
+  loadout: string | null;
 }) {
   return (
     <motion.div
@@ -47,10 +60,13 @@ function PlayerRow({
       className="bg-bg-elevated/60 group flex items-center gap-3 rounded-lg px-3 py-2"
     >
       <span className={`h-2.5 w-2.5 rounded-full ${TEAM_DOT[player.team]}`} />
-      <span className="flex-1 truncate text-sm font-medium text-white/90">
-        {player.name}
-        {player.isHost && <span className="text-warning ml-1.5 text-xs">★ host</span>}
-        {isSelf && <span className="ml-1.5 text-xs text-white/40">(you)</span>}
+      <span className="flex flex-1 flex-col truncate">
+        <span className="truncate text-sm font-medium text-white/90">
+          {player.name}
+          {player.isHost && <span className="text-warning ml-1.5 text-xs">★ host</span>}
+          {isSelf && <span className="ml-1.5 text-xs text-white/40">(you)</span>}
+        </span>
+        {loadout && <span className="truncate text-[10px] text-white/40">{loadout}</span>}
       </span>
       <span className={`w-12 text-right text-xs tabular-nums ${pingColor(player.ping)}`}>
         {player.ping > 0 ? `${player.ping}ms` : '—'}
@@ -79,12 +95,14 @@ function TeamColumn({
   selfId,
   isHost,
   onKick,
+  loadoutFor,
 }: {
   team: TeamId;
   lobby: LobbyState;
   selfId: string | null;
   isHost: boolean;
   onKick: (id: string) => void;
+  loadoutFor: (player: PlayerPublic) => string | null;
 }) {
   const players = lobby.players.filter((p) => p.team === team);
   return (
@@ -104,6 +122,7 @@ function TeamColumn({
               isSelf={p.id === selfId}
               canKick={isHost}
               onKick={() => onKick(p.id)}
+              loadout={loadoutFor(p)}
             />
           ))}
         </AnimatePresence>
@@ -170,7 +189,22 @@ export function LobbyScreen() {
   const isHost = useLobbyStore((s) => s.isHost());
   const { leaveLobby, closeLobby, startGame, setReady, selectTeam, kick } = useLobbyStore.getState();
   const pushToast = useUIStore((s) => s.pushToast);
+  const setScreen = useUIStore((s) => s.setScreen);
+  const loadManifest = useAssetStore((s) => s.load);
+  const names = useAssetNames();
   const [showSettings, setShowSettings] = useState(false);
+
+  useEffect(() => {
+    loadManifest();
+  }, [loadManifest]);
+
+  const loadoutFor = (player: PlayerPublic): string | null => {
+    const parts = [
+      player.characterId ? names.characters.get(player.characterId) : null,
+      player.weaponId ? names.weapons.get(player.weaponId) : null,
+    ].filter(Boolean);
+    return parts.length ? parts.join(' · ') : null;
+  };
 
   if (!lobby) return null;
 
@@ -223,9 +257,31 @@ export function LobbyScreen() {
               selfId={playerId}
               isHost={isHost}
               onKick={kick}
+              loadoutFor={loadoutFor}
             />
           ))}
         </div>
+
+        {/* Loadout */}
+        {self && (
+          <Panel className="flex flex-wrap items-center justify-between gap-4 p-5">
+            <span className="text-xs uppercase tracking-wide text-white/40">Loadout</span>
+            <div className="flex flex-1 flex-wrap justify-end gap-3">
+              <Button variant="secondary" size="sm" onClick={() => setScreen('characterSelect')}>
+                Character:{' '}
+                <span className="text-accent ml-1">
+                  {self.characterId ? (names.characters.get(self.characterId) ?? '—') : 'Choose'}
+                </span>
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setScreen('weaponSelect')}>
+                Weapon:{' '}
+                <span className="text-accent ml-1">
+                  {self.weaponId ? (names.weapons.get(self.weaponId) ?? '—') : 'Choose'}
+                </span>
+              </Button>
+            </div>
+          </Panel>
+        )}
 
         {/* Self controls */}
         {self && (

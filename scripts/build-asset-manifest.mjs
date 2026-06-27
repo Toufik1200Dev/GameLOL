@@ -55,7 +55,9 @@ function scanCategory(categoryKey, requiredFiles) {
 
     let config;
     try {
-      config = JSON.parse(readFileSync(join(folder, 'config.json'), 'utf8'));
+      const text = readFileSync(join(folder, 'config.json'), 'utf8');
+      const clean = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+      config = JSON.parse(clean);
     } catch (err) {
       console.warn(`[assets] skip ${categoryKey}/${id}: invalid config.json (${err.message})`);
       continue;

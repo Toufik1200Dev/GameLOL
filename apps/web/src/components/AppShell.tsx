@@ -6,6 +6,7 @@
  * cross-faded with Framer Motion.
  */
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSocketConnection } from '../hooks/useSocketConnection';
 import { useUIStore, type Screen } from '../stores/uiStore';
@@ -16,12 +17,23 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { LobbyScreen } from './screens/LobbyScreen';
 import { GamePlaceholder } from './screens/GamePlaceholder';
 
+// The selection screens pull in React Three Fiber; lazy-load them (client-only)
+// so the menu/lobby keep a lean initial bundle.
+const CharacterSelectScreen = dynamic(
+  () => import('./screens/CharacterSelectScreen').then((m) => m.CharacterSelectScreen),
+  { ssr: false, loading: () => <LoadingScreen /> },
+);
+const WeaponSelectScreen = dynamic(
+  () => import('./screens/WeaponSelectScreen').then((m) => m.WeaponSelectScreen),
+  { ssr: false, loading: () => <LoadingScreen /> },
+);
+
 const SCREENS: Record<Screen, React.ComponentType> = {
   menu: MainMenu,
   settings: SettingsScreen,
   lobby: LobbyScreen,
-  characterSelect: MainMenu, // Phase 2
-  weaponSelect: MainMenu, // Phase 2
+  characterSelect: CharacterSelectScreen,
+  weaponSelect: WeaponSelectScreen,
   game: GamePlaceholder, // Phase 3
 };
 
