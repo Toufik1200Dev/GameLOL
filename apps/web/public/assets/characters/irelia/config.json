@@ -1,0 +1,11 @@
+{
+  "name": "Irelia",
+  "description": "League of Legends champion model.",
+  "health": 10,
+  "speed": 5.8,
+  "sprintMultiplier": 1.7,
+  "jumpHeight": 1.5,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 0
+}

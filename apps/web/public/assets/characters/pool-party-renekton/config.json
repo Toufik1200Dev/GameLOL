@@ -1,0 +1,11 @@
+{
+  "name": "Pool Party Renekton",
+  "description": "League of Legends champion model.",
+  "health": 12,
+  "speed": 4.9,
+  "sprintMultiplier": 1.6,
+  "jumpHeight": 1.35,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 0
+}

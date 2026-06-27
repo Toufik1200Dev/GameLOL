@@ -1,0 +1,17 @@
+{
+  "name": "Submachine Gun",
+  "description": "Fast-firing SMG. Model by Darkki (Sketchfab).",
+  "damage": 1,
+  "fireRate": 700,
+  "magazine": 30,
+  "reloadSpeed": 2.0,
+  "projectileSpeed": 0,
+  "recoil": 0.3,
+  "spread": 0.03,
+  "range": 55,
+  "attachment": {
+    "position": [0, 0, 0],
+    "rotation": [0, 0, 0],
+    "scale": 1.0
+  }
+}

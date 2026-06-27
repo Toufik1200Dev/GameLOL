@@ -1,0 +1,11 @@
+{
+  "name": "Ahri (Unbound)",
+  "description": "League of Legends champion model.",
+  "health": 10,
+  "speed": 5.5,
+  "sprintMultiplier": 1.7,
+  "jumpHeight": 1.45,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 0
+}

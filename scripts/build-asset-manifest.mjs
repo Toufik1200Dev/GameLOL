@@ -18,9 +18,10 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS_DIR = resolve(__dirname, '../apps/web/public/assets');
 
+// `icon.png` is optional (the UI shows a placeholder without it).
 const CATEGORIES = /** @type {const} */ ([
-  { key: 'characters', requiredFiles: ['model.glb', 'icon.png', 'config.json'] },
-  { key: 'weapons', requiredFiles: ['weapon.glb', 'icon.png', 'config.json'] },
+  { key: 'characters', requiredFiles: ['model.glb', 'config.json'] },
+  { key: 'weapons', requiredFiles: ['weapon.glb', 'config.json'] },
   { key: 'maps', requiredFiles: ['config.json'] },
 ]);
 
@@ -85,8 +86,8 @@ function build() {
   ensureDirs();
   const manifest = {
     generatedAt: new Date().toISOString(),
-    characters: scanCategory('characters', ['model.glb', 'icon.png', 'config.json']),
-    weapons: scanCategory('weapons', ['weapon.glb', 'icon.png', 'config.json']),
+    characters: scanCategory('characters', ['model.glb', 'config.json']),
+    weapons: scanCategory('weapons', ['weapon.glb', 'config.json']),
     maps: scanCategory('maps', ['config.json']),
   };
 

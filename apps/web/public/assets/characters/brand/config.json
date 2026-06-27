@@ -1,0 +1,11 @@
+{
+  "name": "Brand",
+  "description": "League of Legends champion model.",
+  "health": 10,
+  "speed": 5.2,
+  "sprintMultiplier": 1.65,
+  "jumpHeight": 1.4,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 0
+}

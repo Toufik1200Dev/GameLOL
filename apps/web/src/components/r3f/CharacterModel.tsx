@@ -5,15 +5,21 @@
  * once (cached by drei) and deep-cloned per instance via SkeletonUtils so the
  * same asset can be used by multiple players (and animated independently).
  *
- * All of this is config-driven (scale / yOffset / yawOffset / weapon attachment)
- * so uploaded models can be aligned without code changes. A failed/absent model
- * falls back to the neutral capsule (characters) or renders nothing (weapons).
+ * Models AUTO-FIT: a character is scaled so its height ≈ the player capsule and
+ * its feet sit on the ground; a weapon is scaled so its longest dimension is a
+ * sensible hand size. The `scale` (characters) / `attachment.scale` (weapons)
+ * config value is then a fine-tune multiplier on top (1 = auto). `yOffset` /
+ * `yawOffset` / `attachment.position|rotation` handle any remaining alignment —
+ * all without code. A failed/absent model falls back to the capsule (characters)
+ * or renders nothing (weapons).
  */
 import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import type { Group, Object3D } from 'three';
-import type { CharacterConfig, WeaponConfig } from '@game/shared';
+import { Box3, Vector3, type Group, type Object3D } from 'three';
+import { PLAYER_HEIGHT, type CharacterConfig, type WeaponConfig } from '@game/shared';
+
+const TARGET_WEAPON_LENGTH = 0.55; // metres
 
 class ModelErrorBoundary extends Component<
   { children: ReactNode; fallback: ReactNode },
@@ -44,6 +50,18 @@ function useClonedScene(url: string): Object3D {
   }, [scene]);
 }
 
+/** Measure a model's bounding box once (bind pose) for auto-fit. */
+function useBounds(object: Object3D): { size: Vector3; center: Vector3; min: Vector3 } {
+  return useMemo(() => {
+    const box = new Box3().setFromObject(object);
+    const size = new Vector3();
+    const center = new Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    return { size, center, min: box.min.clone() };
+  }, [object]);
+}
+
 function CharacterModelInner({
   url,
   animationsUrl,
@@ -55,6 +73,8 @@ function CharacterModelInner({
 }) {
   const ref = useRef<Group>(null);
   const cloned = useClonedScene(url);
+  const { size, center, min } = useBounds(cloned);
+
   const { animations: embedded } = useGLTF(url);
   // Always call the hook (same url when no separate file) for stable hook order.
   const animGltf = useGLTF(animationsUrl ?? url);
@@ -72,14 +92,17 @@ function CharacterModelInner({
     };
   }, [actions, names, config.animations.idle]);
 
+  // Auto-fit: scale to player height, centre on X/Z, drop feet to y=0.
+  const autoScale = size.y > 1e-4 ? PLAYER_HEIGHT / size.y : 1;
+  const s = autoScale * config.scale;
+
   return (
-    <group
-      ref={ref}
-      position={[0, config.yOffset, 0]}
-      rotation={[0, config.yawOffset, 0]}
-      scale={config.scale}
-    >
-      <primitive object={cloned} />
+    // Outer group: facing + vertical nudge.
+    <group ref={ref} rotation={[0, config.yawOffset, 0]} position={[0, config.yOffset, 0]}>
+      {/* Inner group: scale + centre/ground (feet at origin). */}
+      <group scale={s} position={[-center.x * s, -min.y * s, -center.z * s]}>
+        <primitive object={cloned} />
+      </group>
     </group>
   );
 }
@@ -107,10 +130,20 @@ export function CharacterModel({
 
 function WeaponModelInner({ url, config }: { url: string; config: WeaponConfig }) {
   const cloned = useClonedScene(url);
+  const { size, center } = useBounds(cloned);
   const a = config.attachment;
+
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const autoScale = maxDim > 1e-4 ? TARGET_WEAPON_LENGTH / maxDim : 1;
+  const s = autoScale * a.scale;
+
   return (
-    <group position={a.position} rotation={a.rotation} scale={a.scale}>
-      <primitive object={cloned} />
+    // Attachment transform (position/rotation) for hand alignment.
+    <group position={a.position} rotation={a.rotation}>
+      {/* Auto-fit scale + centre on origin. */}
+      <group scale={s} position={[-center.x * s, -center.y * s, -center.z * s]}>
+        <primitive object={cloned} />
+      </group>
     </group>
   );
 }

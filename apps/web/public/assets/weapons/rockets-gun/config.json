@@ -1,0 +1,17 @@
+{
+  "name": "Rockets Gun",
+  "description": "Heavy rocket launcher. Model by Likeness3d (Sketchfab).",
+  "damage": 6,
+  "fireRate": 45,
+  "magazine": 4,
+  "reloadSpeed": 3.2,
+  "projectileSpeed": 35,
+  "recoil": 1.0,
+  "spread": 0.0,
+  "range": 120,
+  "attachment": {
+    "position": [0, 0, 0],
+    "rotation": [0, 0, 0],
+    "scale": 1.0
+  }
+}
