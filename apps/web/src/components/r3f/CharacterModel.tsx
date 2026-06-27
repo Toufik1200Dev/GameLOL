@@ -14,6 +14,7 @@
  * or renders nothing (weapons).
  */
 import { Component, Suspense, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { Box3, Vector3, type Group, type Object3D } from 'three';
@@ -66,10 +67,12 @@ function CharacterModelInner({
   url,
   animationsUrl,
   config,
+  isMoving,
 }: {
   url: string;
   animationsUrl: string | null;
   config: CharacterConfig;
+  isMoving?: () => boolean;
 }) {
   const ref = useRef<Group>(null);
   const cloned = useClonedScene(url);
@@ -81,16 +84,40 @@ function CharacterModelInner({
   const clips = animationsUrl ? animGltf.animations : embedded;
   const { actions, names } = useAnimations(clips, ref);
 
+  // Resolve idle + locomotion clips (by config name, else by common naming).
+  const idleName = useMemo(() => {
+    if (config.animations.idle && actions[config.animations.idle]) return config.animations.idle;
+    return names.find((n) => /idle/i.test(n)) ?? names[0] ?? null;
+  }, [actions, names, config.animations]);
+  const moveName = useMemo(() => {
+    if (config.animations.run && actions[config.animations.run]) return config.animations.run;
+    if (config.animations.walk && actions[config.animations.walk]) return config.animations.walk;
+    return (
+      names.find((n) => /run|sprint/i.test(n)) ?? names.find((n) => /walk|move/i.test(n)) ?? null
+    );
+  }, [actions, names, config.animations]);
+
+  const currentClip = useRef<string | null>(null);
+  const playClip = (name: string | null) => {
+    if (!name || currentClip.current === name) return;
+    const next = actions[name];
+    if (!next) return;
+    const prev = currentClip.current ? actions[currentClip.current] : null;
+    next.reset().fadeIn(0.2).play();
+    prev?.fadeOut(0.2);
+    currentClip.current = name;
+  };
+
   useEffect(() => {
-    if (names.length === 0) return;
-    const idle = config.animations.idle;
-    const pick = idle && actions[idle] ? idle : names[0];
-    const action = pick ? actions[pick] : undefined;
-    action?.reset().fadeIn(0.3).play();
-    return () => {
-      action?.fadeOut(0.2);
-    };
-  }, [actions, names, config.animations.idle]);
+    playClip(idleName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idleName]);
+
+  // Switch to the locomotion clip while moving, idle otherwise.
+  useFrame(() => {
+    const moving = isMoving?.() ?? false;
+    playClip(moving && moveName ? moveName : idleName);
+  });
 
   // Auto-fit: scale to player height, centre on X/Z, drop feet to y=0.
   const autoScale = size.y > 1e-4 ? PLAYER_HEIGHT / size.y : 1;
@@ -107,22 +134,29 @@ function CharacterModelInner({
   );
 }
 
-/** Character GLB with idle animation; falls back to `fallback` on error/Suspense. */
+/** Character GLB with idle/locomotion animation; falls back on error/Suspense. */
 export function CharacterModel({
   url,
   animationsUrl,
   config,
   fallback,
+  isMoving,
 }: {
   url: string;
   animationsUrl: string | null;
   config: CharacterConfig;
   fallback: ReactNode;
+  isMoving?: () => boolean;
 }) {
   return (
     <ModelErrorBoundary fallback={fallback}>
       <Suspense fallback={fallback}>
-        <CharacterModelInner url={url} animationsUrl={animationsUrl} config={config} />
+        <CharacterModelInner
+          url={url}
+          animationsUrl={animationsUrl}
+          config={config}
+          isMoving={isMoving}
+        />
       </Suspense>
     </ModelErrorBoundary>
   );

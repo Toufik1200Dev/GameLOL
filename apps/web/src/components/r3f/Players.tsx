@@ -46,10 +46,12 @@ function CharacterAvatar({
   team,
   characterId,
   weaponId,
+  isMoving,
 }: {
   team: TeamId;
   characterId: string | null;
   weaponId: string | null;
+  isMoving?: () => boolean;
 }) {
   const manifest = useAssetStore((s) => s.manifest);
   const character = useMemo(
@@ -69,6 +71,7 @@ function CharacterAvatar({
           animationsUrl={character.animations}
           config={character.config}
           fallback={<CapsuleAvatar team={team} />}
+          isMoving={isMoving}
         />
       ) : (
         <CapsuleAvatar team={team} />
@@ -114,6 +117,10 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
         team={team}
         characterId={self?.characterId ?? null}
         weaponId={self?.weaponId ?? null}
+        isMoving={() => {
+          const v = client.predicted.velocity;
+          return Math.hypot(v.x, v.z) > 1.2;
+        }}
       />
     </group>
   );
@@ -143,6 +150,7 @@ function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
         team={team}
         characterId={meta?.characterId ?? null}
         weaponId={meta?.weaponId ?? null}
+        isMoving={() => useGameStore.getState().roster.find((p) => p.id === id)?.moving ?? false}
       />
       {meta && <NameTag name={meta.name} team={team} />}
     </group>

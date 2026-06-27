@@ -217,11 +217,11 @@ async function processMap(id, folder) {
   let solidCount = 0;
   for (const v of solid) solidCount += v;
 
-  // 4) Spawns: pick OPEN floor columns (clear headroom above the floor) on each
-  //    half so players never spawn inside the surrounding buildings.
-  const headroom = Math.max(2, Math.ceil(2.4 / CELL_SIZE));
+  // 4) Spawns: pick floor columns that are OPEN TO THE SKY (no solid anywhere in
+  //    the column) on each half, so players never spawn under the overhead deck
+  //    or inside the surrounding buildings.
   const openColumn = (ix, iz) => {
-    for (let iy = 0; iy < headroom; iy++) {
+    for (let iy = 0; iy < ny; iy++) {
       if (solid[(iy * nz + iz) * nx + ix]) return false;
     }
     return true;
