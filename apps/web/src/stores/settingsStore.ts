@@ -34,7 +34,9 @@ export const useSettingsStore = create<SettingsState>()(
       masterVolume: 0.8,
       musicVolume: 0.5,
       sfxVolume: 0.8,
-      graphicsQuality: 'high',
+      // Default to 'medium' (no shadows / post-processing) so heavy GLB maps run
+      // smoothly out of the box; users can opt into 'high' for shadows + bloom.
+      graphicsQuality: 'medium',
       showFps: true,
       set: (key, value) => set({ [key]: value } as Partial<SettingsState>),
     }),

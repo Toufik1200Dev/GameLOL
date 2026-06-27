@@ -25,6 +25,7 @@ import { useAssetStore } from '../../stores/assetStore';
 import { useGameControls } from '../../game/input/useGameControls';
 import { NetGameClient } from '../../game/net/NetGameClient';
 import { GameScene, type SceneInfo } from '../r3f/GameScene';
+import { GameErrorBoundary } from '../r3f/GameErrorBoundary';
 import { HUD } from '../game/HUD';
 import { LoadingScreen } from './LoadingScreen';
 import { Button, Panel } from '../ui/primitives';
@@ -203,7 +204,9 @@ export function GameScreen() {
 
   return (
     <div ref={containerRef} className="relative h-full w-full bg-black">
-      <GameScene client={setup.client} scene={setup.scene} controls={controls.current} />
+      <GameErrorBoundary onLeave={leaveMatch}>
+        <GameScene client={setup.client} scene={setup.scene} controls={controls.current} />
+      </GameErrorBoundary>
       <HUD worldSize={setup.worldSize} />
 
       {/* Click-to-play prompt */}

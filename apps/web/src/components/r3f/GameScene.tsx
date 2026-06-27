@@ -68,7 +68,7 @@ function SceneEnv({ scene }: { scene: SceneInfo }) {
           castShadow
           position={[size * 0.6, size * 1.4, size * 0.4]}
           intensity={0.6}
-          shadow-mapSize={[2048, 2048]}
+          shadow-mapSize={[1024, 1024]}
           shadow-bias={-0.0005}
           shadow-camera-near={1}
           shadow-camera-far={size * 4}
@@ -90,7 +90,7 @@ function SceneEnv({ scene }: { scene: SceneInfo }) {
         castShadow
         position={[size * 0.8, size * 1.2, size * 0.6]}
         intensity={1.7}
-        shadow-mapSize={[2048, 2048]}
+        shadow-mapSize={[1024, 1024]}
         shadow-bias={-0.0005}
         shadow-camera-near={1}
         shadow-camera-far={size * 4}
@@ -104,7 +104,9 @@ function SceneEnv({ scene }: { scene: SceneInfo }) {
 }
 
 function PostFX({ quality }: { quality: GraphicsQuality }) {
-  if (quality === 'low') return null;
+  // Post-processing (extra render targets) is the heaviest GPU cost + the most
+  // fragile on context loss — reserve it for the 'high' tier.
+  if (quality !== 'high') return null;
   return (
     <EffectComposer>
       <Bloom intensity={0.5} luminanceThreshold={0.75} luminanceSmoothing={0.2} mipmapBlur />
@@ -450,16 +452,24 @@ export function GameScene({
   const fov = useSettingsStore((s) => s.fov);
   const pool = useRef<Tracer[]>([]);
   const dpr = useMemo<[number, number]>(
-    () => (quality === 'low' ? [0.75, 1] : quality === 'medium' ? [1, 1.5] : [1, 2]),
+    () => (quality === 'low' ? [0.7, 1] : quality === 'medium' ? [1, 1.25] : [1, 1.5]),
     [quality],
   );
 
   return (
     <Canvas
-      shadows={quality !== 'low'}
+      shadows={quality === 'high'}
       dpr={dpr}
-      gl={{ antialias: quality !== 'low', toneMapping: THREE.ACESFilmicToneMapping }}
+      gl={{
+        antialias: quality !== 'low',
+        toneMapping: THREE.ACESFilmicToneMapping,
+        powerPreference: 'high-performance',
+      }}
       camera={{ fov, near: 0.1, far: Math.max(400, scene.size * 6), position: [0, 5, 10] }}
+      onCreated={({ gl }) => {
+        // Allow the browser to restore a lost context instead of giving up.
+        gl.domElement.addEventListener('webglcontextlost', (e) => e.preventDefault(), false);
+      }}
       onClick={(e) => (e.target as HTMLCanvasElement).requestPointerLock?.()}
     >
       <color attach="background" args={[scene.skyColor]} />
