@@ -7,10 +7,7 @@
  */
 import { Component, type ReactNode } from 'react';
 
-export class AppErrorBoundary extends Component<
-  { children: ReactNode },
-  { error: Error | null }
-> {
+export class AppErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   override state: { error: Error | null } = { error: null };
 
   static getDerivedStateFromError(error: Error) {

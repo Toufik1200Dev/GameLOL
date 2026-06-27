@@ -17,20 +17,41 @@ import { MainMenu } from './screens/MainMenu';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { LobbyScreen } from './screens/LobbyScreen';
 
+/**
+ * Resolve a lazy chunk, auto-recovering from a stale ChunkLoadError (common when
+ * a deploy/dev-rebuild changes chunk hashes under an open tab) by reloading once.
+ */
+function withChunkRetry<T>(load: Promise<T>): Promise<T> {
+  return load
+    .then((mod) => {
+      if (typeof window !== 'undefined') sessionStorage.removeItem('chunkReloaded');
+      return mod;
+    })
+    .catch((err) => {
+      if (typeof window !== 'undefined' && !sessionStorage.getItem('chunkReloaded')) {
+        sessionStorage.setItem('chunkReloaded', '1');
+        window.location.reload();
+        return new Promise<T>(() => {}); // hold until the reload happens
+      }
+      throw err;
+    });
+}
+
 // R3F-heavy screens are lazy-loaded (client-only) so the menu/lobby keep a lean
 // initial bundle.
 const CharacterSelectScreen = dynamic(
-  () => import('./screens/CharacterSelectScreen').then((m) => m.CharacterSelectScreen),
+  () =>
+    withChunkRetry(import('./screens/CharacterSelectScreen').then((m) => m.CharacterSelectScreen)),
   { ssr: false, loading: () => <LoadingScreen /> },
 );
 const WeaponSelectScreen = dynamic(
-  () => import('./screens/WeaponSelectScreen').then((m) => m.WeaponSelectScreen),
+  () => withChunkRetry(import('./screens/WeaponSelectScreen').then((m) => m.WeaponSelectScreen)),
   { ssr: false, loading: () => <LoadingScreen /> },
 );
-const GameScreen = dynamic(() => import('./screens/GameScreen').then((m) => m.GameScreen), {
-  ssr: false,
-  loading: () => <LoadingScreen />,
-});
+const GameScreen = dynamic(
+  () => withChunkRetry(import('./screens/GameScreen').then((m) => m.GameScreen)),
+  { ssr: false, loading: () => <LoadingScreen /> },
+);
 
 const SCREENS: Record<Screen, React.ComponentType> = {
   menu: MainMenu,
