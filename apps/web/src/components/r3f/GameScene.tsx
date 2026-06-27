@@ -21,11 +21,13 @@ import {
   type GeneratedWorld,
 } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
+import { useAssetStore } from '../../stores/assetStore';
 import { useSettingsStore, type GraphicsQuality } from '../../stores/settingsStore';
 import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
 import { World } from './World';
 import { Players } from './Players';
+import { WeaponModel } from './CharacterModel';
 
 interface Tracer {
   id: number;
@@ -225,6 +227,42 @@ function GameLoop({
   return null;
 }
 
+/** First-person weapon viewmodel for the local player (follows the camera). */
+function FirstPersonViewmodel({
+  client,
+  controls,
+}: {
+  client: NetGameClient;
+  controls: ControlsRef;
+}) {
+  const camera = useThree((s) => s.camera);
+  const ref = useRef<THREE.Group>(null);
+  const manifest = useAssetStore((s) => s.manifest);
+  const weaponId = useGameStore(
+    (s) => s.roster.find((p) => p.id === client.selfId)?.weaponId ?? null,
+  );
+  const weapon = weaponId ? manifest.weapons.find((w) => w.id === weaponId) : undefined;
+
+  useFrame(() => {
+    const g = ref.current;
+    if (!g) return;
+    g.visible = controls.firstPerson && Boolean(weapon);
+    if (!g.visible) return;
+    g.position.copy(camera.position);
+    g.quaternion.copy(camera.quaternion);
+    g.translateX(0.18);
+    g.translateY(-0.18);
+    g.translateZ(-0.4);
+  });
+
+  if (!weapon) return null;
+  return (
+    <group ref={ref}>
+      <WeaponModel url={weapon.model} config={weapon.config} />
+    </group>
+  );
+}
+
 export function GameScene({
   client,
   world,
@@ -254,6 +292,7 @@ export function GameScene({
       <SceneEnv world={world} />
       <World world={world} />
       <Players client={client} controls={controls} />
+      <FirstPersonViewmodel client={client} controls={controls} />
       <GameLoop client={client} world={world} controls={controls} pool={pool} />
       <Tracers pool={pool} />
       <PostFX quality={quality} />

@@ -3,8 +3,10 @@
 /**
  * Renders the local player (predicted/smoothed) and remote players
  * (interpolated). Transforms are read from the NetGameClient every frame via
- * refs — never React state — so motion stays smooth. The neutral capsule avatar
- * stands in until a real character `.glb` is wired to `characterId`.
+ * refs — never React state — so motion stays smooth. The selected character
+ * `.glb` (resolved from the asset manifest) renders as the avatar, with a
+ * neutral capsule fallback until a model is chosen/available, and the selected
+ * weapon is attached at a hand anchor.
  */
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
@@ -12,12 +14,17 @@ import { Html } from '@react-three/drei';
 import type { Group } from 'three';
 import { PLAYER_HEIGHT, PLAYER_RADIUS, type TeamId } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
+import { useAssetStore } from '../../stores/assetStore';
 import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
+import { CharacterModel, WeaponModel } from './CharacterModel';
 
 const TEAM_COLOR: Record<TeamId, string> = { red: '#ff4d5e', blue: '#4c8bff' };
 
-/** Neutral capsule avatar (engine primitive; replaced by character models later). */
+/** Where the held weapon sits relative to the avatar feet (right side, chest, forward). */
+const HAND_ANCHOR: [number, number, number] = [0.3, PLAYER_HEIGHT * 0.6, -0.2];
+
+/** Neutral capsule avatar (engine primitive; fallback when no character model). */
 function CapsuleAvatar({ team }: { team: TeamId }) {
   const capLen = PLAYER_HEIGHT - PLAYER_RADIUS * 2;
   return (
@@ -26,12 +33,52 @@ function CapsuleAvatar({ team }: { team: TeamId }) {
         <capsuleGeometry args={[PLAYER_RADIUS, capLen, 6, 12]} />
         <meshStandardMaterial color={TEAM_COLOR[team]} roughness={0.6} />
       </mesh>
-      {/* Facing indicator (visor) pointing local -Z (forward). */}
       <mesh position={[0, PLAYER_HEIGHT * 0.78, -PLAYER_RADIUS]} castShadow>
         <boxGeometry args={[0.5, 0.18, 0.25]} />
         <meshStandardMaterial color="#0c1322" roughness={0.4} />
       </mesh>
     </group>
+  );
+}
+
+/** Resolves character/weapon models from the manifest; capsule + no weapon fallback. */
+function CharacterAvatar({
+  team,
+  characterId,
+  weaponId,
+}: {
+  team: TeamId;
+  characterId: string | null;
+  weaponId: string | null;
+}) {
+  const manifest = useAssetStore((s) => s.manifest);
+  const character = useMemo(
+    () => (characterId ? manifest.characters.find((c) => c.id === characterId) : undefined),
+    [manifest, characterId],
+  );
+  const weapon = useMemo(
+    () => (weaponId ? manifest.weapons.find((w) => w.id === weaponId) : undefined),
+    [manifest, weaponId],
+  );
+
+  return (
+    <>
+      {character ? (
+        <CharacterModel
+          url={character.model}
+          animationsUrl={character.animations}
+          config={character.config}
+          fallback={<CapsuleAvatar team={team} />}
+        />
+      ) : (
+        <CapsuleAvatar team={team} />
+      )}
+      {weapon && (
+        <group position={HAND_ANCHOR}>
+          <WeaponModel url={weapon.model} config={weapon.config} />
+        </group>
+      )}
+    </>
   );
 }
 
@@ -56,7 +103,6 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
   useFrame(() => {
     const g = ref.current;
     if (!g) return;
-    // Hide own avatar in first person.
     g.visible = !controls.firstPerson;
     g.position.set(client.render.position.x, client.render.position.y, client.render.position.z);
     g.rotation.set(0, client.render.yaw, 0);
@@ -64,7 +110,11 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
 
   return (
     <group ref={ref}>
-      <CapsuleAvatar team={team} />
+      <CharacterAvatar
+        team={team}
+        characterId={self?.characterId ?? null}
+        weaponId={self?.weaponId ?? null}
+      />
     </group>
   );
 }
@@ -89,7 +139,11 @@ function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
   const team = meta?.team ?? 'blue';
   return (
     <group ref={ref}>
-      <CapsuleAvatar team={team} />
+      <CharacterAvatar
+        team={team}
+        characterId={meta?.characterId ?? null}
+        weaponId={meta?.weaponId ?? null}
+      />
       {meta && <NameTag name={meta.name} team={team} />}
     </group>
   );

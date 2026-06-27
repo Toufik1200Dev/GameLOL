@@ -12,6 +12,10 @@ place and (in dev) refresh — the manifest re-scans automatically. No code chan
 | `icon.png`       | ✅       | Selection-grid thumbnail.                |
 | `config.json`    | ✅       | Stats + animation clip name map.         |
 
+> **One combined `.glb` is fine** — if your download already contains the mesh,
+> textures and animations baked into a single file, just save it as `model.glb`
+> and skip `animations.glb`. The engine reads embedded clips automatically.
+
 Example `config.json`:
 
 ```json
@@ -23,13 +27,13 @@ Example `config.json`:
   "sprintMultiplier": 1.6,
   "jumpHeight": 1.4,
   "scale": 1.0,
+  "yOffset": 0,
+  "yawOffset": 0,
   "animations": {
     "idle": "Idle",
     "walk": "Walk",
     "run": "Run",
     "jump": "Jump",
-    "fall": "Fall",
-    "land": "Land",
     "aim": "Aim",
     "shoot": "Shoot",
     "reload": "Reload",
@@ -38,6 +42,17 @@ Example `config.json`:
   }
 }
 ```
+
+Alignment knobs (tune these to your specific model — no code changes):
+
+- `scale` — most downloaded models aren't in metres; the player capsule is ~1.7 m
+  tall, so adjust until the character matches.
+- `yOffset` — raise/lower so the feet sit on the ground (use if the model's origin
+  is at its centre, not its feet).
+- `yawOffset` — rotate (radians) if the model faces the wrong way (e.g. `3.14159`
+  to spin 180°).
+- `animations.idle` — name of the idle clip to loop in-game/preview. If omitted,
+  the first embedded clip is used; if there are none, the model stands still.
 
 ## Weapons → `weapons/<id>/`
 

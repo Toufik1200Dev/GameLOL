@@ -13,6 +13,7 @@ import { getSocket } from '../../lib/socket';
 import { useLobbyStore } from '../../stores/lobbyStore';
 import { useUIStore } from '../../stores/uiStore';
 import { useGameStore } from '../../stores/gameStore';
+import { useAssetStore } from '../../stores/assetStore';
 import { useGameControls } from '../../game/input/useGameControls';
 import { NetGameClient } from '../../game/net/NetGameClient';
 import { GameScene } from '../r3f/GameScene';
@@ -56,6 +57,11 @@ export function GameScreen() {
   }, [gameStart, playerId]);
 
   const controls = useGameControls(setup?.spawnYaw ?? 0);
+
+  // Ensure the asset manifest is available for in-game character/weapon models.
+  useEffect(() => {
+    useAssetStore.getState().load();
+  }, []);
 
   // Wire authoritative events.
   useEffect(() => {

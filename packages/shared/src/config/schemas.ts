@@ -43,6 +43,10 @@ export const characterConfigSchema = z.object({
   sprintMultiplier: z.number().positive().default(1.5),
   jumpHeight: z.number().positive().default(1.4),
   scale: z.number().positive().default(1),
+  /** Vertical offset (metres) to align the model's feet to the ground. */
+  yOffset: z.number().default(0),
+  /** Yaw offset (radians) if the model doesn't face -Z by default. */
+  yawOffset: z.number().default(0),
   animations: animationMapSchema.default({}),
 });
 
