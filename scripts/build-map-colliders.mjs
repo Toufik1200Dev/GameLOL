@@ -425,16 +425,18 @@ async function processMap(id, folder, props = {}) {
       const rot = (placed.length % 2) * (Math.PI / 2);
       const ex = rot === 0 ? prop.size.x : prop.size.z;
       const ez = rot === 0 ? prop.size.z : prop.size.x;
+      // Sit cars on the collision floor (where players' feet rest), not the
+      // +0.1 spawn epsilon, so they're flush with the floor like the players.
       propInstances.push({
         model: prop.model,
         x: pick.x,
-        y: spawnSurfaceY,
+        y: spawnFloorY,
         z: pick.z,
         rotationY: rot,
       });
       propColliders.push({
-        min: { x: pick.x - ex / 2, y: spawnSurfaceY, z: pick.z - ez / 2 },
-        max: { x: pick.x + ex / 2, y: spawnSurfaceY + prop.size.y, z: pick.z + ez / 2 },
+        min: { x: pick.x - ex / 2, y: spawnFloorY, z: pick.z - ez / 2 },
+        max: { x: pick.x + ex / 2, y: spawnFloorY + prop.size.y, z: pick.z + ez / 2 },
       });
     }
   }
