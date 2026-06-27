@@ -1,17 +1,19 @@
 /**
- * Live asset manifest endpoint. Scans `public/assets/{characters,weapons,maps}`
- * on every request (dev → new folders appear on refresh with no restart),
- * validating each `config.json` against the shared Zod schemas. Invalid or
- * incomplete folders are skipped with a server-side warning.
+ * Static asset manifest builder (build-time).
  *
- * Runs on the Node.js runtime (needs `fs`). In production the same scan works
- * against the bundled `public/` directory.
+ * Scans `apps/web/public/assets/{characters,weapons,maps}`, validates each
+ * `config.json` with the SAME shared Zod schemas the app uses (so defaults are
+ * applied), and writes `public/assets/manifest.json`. The client fetches that
+ * static file, which lets the whole frontend deploy as static files (Firebase
+ * Hosting, any CDN) with no server-side route.
+ *
+ * Run via tsx (see apps/web `prebuild`/`predev`):
+ *   tsx scripts/build-asset-manifest.ts
  */
-import { NextResponse } from 'next/server';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
-  EMPTY_MANIFEST,
   characterConfigSchema,
   mapConfigSchema,
   weaponConfigSchema,
@@ -21,10 +23,8 @@ import {
   type WeaponManifestEntry,
 } from '@game/shared';
 
-export const dynamic = 'force-dynamic';
-export const runtime = 'nodejs';
-
-const ASSETS_DIR = join(process.cwd(), 'public', 'assets');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ASSETS_DIR = resolve(__dirname, '../public/assets');
 
 const listSubdirs = (dir: string): string[] => {
   if (!existsSync(dir)) return [];
@@ -119,17 +119,16 @@ function scanMaps(): MapManifestEntry[] {
   return out;
 }
 
-export function GET() {
-  try {
-    const manifest: AssetManifest = {
-      generatedAt: new Date().toISOString(),
-      characters: scanCharacters(),
-      weapons: scanWeapons(),
-      maps: scanMaps(),
-    };
-    return NextResponse.json(manifest, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (err) {
-    console.error('[assets] manifest scan failed:', err);
-    return NextResponse.json(EMPTY_MANIFEST, { status: 200 });
-  }
-}
+const manifest: AssetManifest = {
+  generatedAt: new Date().toISOString(),
+  characters: scanCharacters(),
+  weapons: scanWeapons(),
+  maps: scanMaps(),
+};
+
+const outPath = join(ASSETS_DIR, 'manifest.json');
+writeFileSync(outPath, JSON.stringify(manifest, null, 2));
+console.log(
+  `[assets] manifest.json written: ${manifest.characters.length} characters, ` +
+    `${manifest.weapons.length} weapons, ${manifest.maps.length} maps`,
+);

@@ -11,6 +11,11 @@ out/
 # Turbo
 .turbo/
 
+# Firebase
+.firebase/
+firebase-debug.log
+.firebase-debug.log
+
 # Coverage / test
 coverage/
 

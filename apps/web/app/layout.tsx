@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter, Rajdhani } from 'next/font/google';
 import './globals.css';
+import { FirebaseAnalytics } from '../src/components/FirebaseAnalytics';
 
 // Self-hosted via next/font (no layout shift, no external <link>). The CSS
 // variables are consumed by the Tailwind theme in globals.css.
@@ -36,6 +37,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={`${inter.variable} ${rajdhani.variable}`}>
       <body>
         <main>{children}</main>
+        <FirebaseAnalytics />
       </body>
     </html>
   );
