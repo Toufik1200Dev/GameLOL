@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Coverage / test
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+Thumbs.db
+
+# Generated asset manifest (regenerated on dev/build)
+apps/web/public/assets/manifest.json
+
+# Large binary assets uploaded by the user live in public/assets/** and are NOT
+# ignored — but keep the repo light by ignoring any local scratch exports:
+*.blend1

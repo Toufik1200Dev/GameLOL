@@ -1,0 +1,16 @@
+# Local orchestration. The web app is typically run via `pnpm dev` for hot
+# reload; this compose file is primarily for running the authoritative server in
+# a container (and optionally a production-style web build).
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: gameonline-server
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-http://localhost:3000}
+    ports:
+      - '4000:4000'
+    restart: unless-stopped

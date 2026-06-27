@@ -1,0 +1,16 @@
+# Normalize line endings to LF for all text files to keep the repo consistent
+# across Windows/macOS/Linux contributors.
+* text=auto eol=lf
+
+# Treat known binary asset types as binary (never normalized/diffed).
+*.glb binary
+*.gltf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.hdr binary
+*.exr binary
+*.mp3 binary
+*.ogg binary
+*.wav binary

@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+/*
+ * Tailwind v4 CSS-first theme. Custom design tokens become utilities, e.g.
+ * `bg-team-red`, `text-accent`, `font-display`.
+ */
+@theme {
+  --color-bg: #0a0e1a;
+  --color-bg-elevated: #111726;
+  --color-panel: #161d30;
+  --color-border: #243049;
+
+  --color-accent: #4cc2ff;
+  --color-accent-strong: #1d9bf0;
+
+  --color-team-red: #ff4d5e;
+  --color-team-red-dark: #c1121f;
+  --color-team-blue: #4c8bff;
+  --color-team-blue-dark: #1d4ed8;
+
+  --color-success: #38d39f;
+  --color-warning: #ffb020;
+  --color-danger: #ff4d5e;
+
+  --color-heart: #ff3860;
+
+  --font-display: var(--font-rajdhani), 'Segoe UI', system-ui, sans-serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: #e6ecff;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+#__next,
+main {
+  height: 100%;
+}
+
+/* Hide scrollbars inside the game shell while keeping scroll where needed. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Subtle animated grid backdrop for menus. */
+.menu-grid-bg {
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(76, 194, 255, 0.12), transparent 60%),
+    linear-gradient(rgba(36, 48, 73, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36, 48, 73, 0.35) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    40px 40px,
+    40px 40px;
+}
