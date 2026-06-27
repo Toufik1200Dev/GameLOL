@@ -15,6 +15,7 @@ import {
 } from '@game/shared';
 import { LobbyManager } from '../lobby/LobbyManager';
 import type { Lobby } from '../lobby/Lobby';
+import { GameInstance } from '../game/GameInstance';
 import { logger } from '../logger';
 
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -22,9 +23,19 @@ type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServer
 
 export function attachSocketHandlers(io: GameServer): LobbyManager {
   const manager = new LobbyManager();
+  /** Active matches keyed by lobby code. */
+  const games = new Map<string, GameInstance>();
 
   const broadcast = (lobby: Lobby): void => {
     io.to(lobby.code).emit('lobby:state', lobby.getState());
+  };
+
+  const stopGame = (code: string): void => {
+    const game = games.get(code);
+    if (game) {
+      game.stop();
+      games.delete(code);
+    }
   };
 
   const currentLobby = (socket: GameSocket): Lobby | undefined => {
@@ -52,11 +63,13 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
     socket.data.lobbyCode = null;
     if (!lobby) return;
 
+    games.get(code)?.removePlayer(socket.id);
     const { migratedHostTo } = lobby.removePlayer(socket.id);
     if (migratedHostTo) {
       logger.info(`lobby ${code}: host migrated to ${migratedHostTo}`);
     }
     if (lobby.isEmpty()) {
+      stopGame(code);
       manager.remove(code);
       logger.info(`lobby ${code}: disposed (empty)`);
       return;
@@ -175,6 +188,7 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
           gs.data.lobbyCode = null;
         }
       }
+      stopGame(code);
       manager.remove(code);
       logger.info(`lobby ${code}: closed by host`);
     });
@@ -187,17 +201,46 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
         return;
       }
       lobby.phase = 'in-game';
+      const code = lobby.code;
       const payload: GameStartPayload = {
         mapId: lobby.settings.mapId,
-        mapSeed: lobby.code, // deterministic per-lobby
+        mapSeed: code, // deterministic per-lobby
         settings: lobby.settings,
         players: lobby.getState().players,
         startedAt: Date.now(),
       };
-      io.to(lobby.code).emit('game:starting', payload);
+
+      // Spin up the authoritative match. onEnd returns the lobby to the waiting
+      // state so players can ready up and rematch.
+      const game = new GameInstance(io, code, code, lobby.settings, payload.players, () => {
+        games.delete(code);
+        const lob = manager.get(code);
+        if (lob) {
+          lob.phase = 'lobby';
+          for (const pl of lob.getState().players) lob.setReady(pl.id, false);
+          broadcast(lob);
+        }
+      });
+      games.set(code, game);
+
+      io.to(code).emit('game:starting', payload);
       broadcast(lobby);
-      logger.info(`lobby ${lobby.code}: match started (${lobby.size} players)`);
+      game.start();
+      logger.info(`lobby ${code}: match started (${lobby.size} players)`);
     });
+
+    // --- in-match events ---
+    socket.on('game:input', (input) => {
+      const code = socket.data.lobbyCode;
+      if (code) games.get(code)?.enqueueInput(socket.id, input);
+    });
+
+    socket.on('game:shoot', (cmd) => {
+      const code = socket.data.lobbyCode;
+      if (code) games.get(code)?.handleShoot(socket.id, cmd);
+    });
+
+    socket.on('game:leaveMatch', () => handleLeave(socket));
 
     socket.on('net:ping', ({ clientTime }, ack) => {
       ack({ clientTime, serverTime: Date.now() });
@@ -209,15 +252,20 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
     });
   });
 
-  startHeartbeat(io, manager);
+  startHeartbeat(io, manager, games);
   return manager;
 }
 
 /**
  * Periodically probes every lobbied socket to measure round-trip latency (shown
- * as each player's ping) and rebroadcasts lobby state so pings stay fresh.
+ * as each player's ping, and fed to the active match for lag compensation), then
+ * rebroadcasts lobby state so pings stay fresh while in the lobby.
  */
-function startHeartbeat(io: GameServer, manager: LobbyManager): void {
+function startHeartbeat(
+  io: GameServer,
+  manager: LobbyManager,
+  games: Map<string, GameInstance>,
+): void {
   setInterval(() => {
     const lobbyCodes = new Set<string>();
     for (const s of io.sockets.sockets.values()) {
@@ -231,13 +279,16 @@ function startHeartbeat(io: GameServer, manager: LobbyManager): void {
       const start = Date.now();
       socket.timeout(HEARTBEAT_INTERVAL_MS).emit('net:probe', { serverTime: start }, (err) => {
         if (err) return; // timed out; keep last known ping
-        lobby.setPing(socket.id, Date.now() - start);
+        const rtt = Date.now() - start;
+        lobby.setPing(socket.id, rtt);
+        games.get(code)?.setPing(socket.id, rtt);
       });
     }
-    // Rebroadcast each active lobby once with refreshed pings.
+    // Rebroadcast lobby state (only meaningful for lobbies still in the waiting
+    // phase; in-match clients are driven by game snapshots).
     for (const code of lobbyCodes) {
       const lobby = manager.get(code);
-      if (lobby) io.to(code).emit('lobby:state', lobby.getState());
+      if (lobby && lobby.phase === 'lobby') io.to(code).emit('lobby:state', lobby.getState());
     }
   }, HEARTBEAT_INTERVAL_MS).unref();
 }

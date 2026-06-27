@@ -15,10 +15,9 @@ import { LoadingScreen } from './screens/LoadingScreen';
 import { MainMenu } from './screens/MainMenu';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { LobbyScreen } from './screens/LobbyScreen';
-import { GamePlaceholder } from './screens/GamePlaceholder';
 
-// The selection screens pull in React Three Fiber; lazy-load them (client-only)
-// so the menu/lobby keep a lean initial bundle.
+// R3F-heavy screens are lazy-loaded (client-only) so the menu/lobby keep a lean
+// initial bundle.
 const CharacterSelectScreen = dynamic(
   () => import('./screens/CharacterSelectScreen').then((m) => m.CharacterSelectScreen),
   { ssr: false, loading: () => <LoadingScreen /> },
@@ -27,6 +26,10 @@ const WeaponSelectScreen = dynamic(
   () => import('./screens/WeaponSelectScreen').then((m) => m.WeaponSelectScreen),
   { ssr: false, loading: () => <LoadingScreen /> },
 );
+const GameScreen = dynamic(() => import('./screens/GameScreen').then((m) => m.GameScreen), {
+  ssr: false,
+  loading: () => <LoadingScreen />,
+});
 
 const SCREENS: Record<Screen, React.ComponentType> = {
   menu: MainMenu,
@@ -34,7 +37,7 @@ const SCREENS: Record<Screen, React.ComponentType> = {
   lobby: LobbyScreen,
   characterSelect: CharacterSelectScreen,
   weaponSelect: WeaponSelectScreen,
-  game: GamePlaceholder, // Phase 3
+  game: GameScreen,
 };
 
 export function AppShell() {

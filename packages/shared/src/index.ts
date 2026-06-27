@@ -11,10 +11,22 @@
 // Constants & primitives
 export * from './constants';
 export * from './math/vec3';
+export * from './math/aabb';
 export * from './rng/seeded';
 
 // Domain types
 export * from './types/lobby';
+export * from './types/game';
+
+// Deterministic simulation (shared by client prediction + server authority)
+export * from './sim/constants';
+export * from './sim/types';
+export * from './sim/collision';
+export * from './sim/movement';
+export * from './sim/combat';
+
+// Procedural world generation
+export * from './world/worldgen';
 
 // Config defaults + schemas + manifest types
 export * from './config/defaults';

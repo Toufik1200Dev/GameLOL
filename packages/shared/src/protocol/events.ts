@@ -10,6 +10,14 @@ import type {
   LobbyState,
   TeamId,
 } from '../types/lobby';
+import type {
+  GameSnapshot,
+  HitEvent,
+  KillEvent,
+  MatchEndPayload,
+  ShootCommand,
+} from '../types/game';
+import type { PlayerInput } from '../sim/types';
 
 /** Acknowledgement callback shape used for request/response style events. */
 export type Ack<T> = (response: T) => void;
@@ -35,6 +43,16 @@ export interface ServerToClientEvents {
    * so the client's ack must take no arguments.
    */
   'net:probe': (payload: { serverTime: number }, ack: () => void) => void;
+
+  // --- In-match ---
+  /** Authoritative world snapshot (delta) at the snapshot rate. */
+  'game:snapshot': (snapshot: GameSnapshot) => void;
+  /** A shot landed (sent to shooter + victim). */
+  'game:hit': (event: HitEvent) => void;
+  /** A kill occurred (kill feed). */
+  'game:kill': (event: KillEvent) => void;
+  /** The match ended; show the victory screen. */
+  'game:ended': (payload: MatchEndPayload) => void;
 }
 
 /** Events clients emit to the server. */
@@ -65,6 +83,14 @@ export interface ClientToServerEvents {
     payload: { clientTime: number },
     ack: Ack<{ clientTime: number; serverTime: number }>,
   ) => void;
+
+  // --- In-match ---
+  /** A sampled input frame (sent ~60 Hz, fire-and-forget). */
+  'game:input': (input: PlayerInput) => void;
+  /** A fire request; the server validates + resolves the hit authoritatively. */
+  'game:shoot': (command: ShootCommand) => void;
+  /** Leave the active match and return to the lobby. */
+  'game:leaveMatch': () => void;
 }
 
 /** Reserved for inter-server events (unused; kept for socket.io generics). */
