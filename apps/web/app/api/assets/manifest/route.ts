@@ -111,6 +111,8 @@ function scanMaps(): MapManifestEntry[] {
       id,
       path: base,
       preview: has(folder, 'preview.png') ? `${base}/preview.png` : null,
+      model: has(folder, 'map.glb') ? `${base}/map.glb` : null,
+      colliders: has(folder, 'colliders.json') ? `${base}/colliders.json` : null,
       config: parsed.data,
     });
   }

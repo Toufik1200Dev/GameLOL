@@ -1,0 +1,13 @@
+{
+  "name": "Tactical Knife",
+  "description": "Lethal melee blade — very short range.",
+  "damage": 5,
+  "fireRate": 160,
+  "magazine": 999,
+  "reloadSpeed": 0.1,
+  "projectileSpeed": 0,
+  "recoil": 0.1,
+  "spread": 0,
+  "range": 3.5,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+}

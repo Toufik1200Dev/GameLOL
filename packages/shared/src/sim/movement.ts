@@ -6,6 +6,7 @@
  */
 import type { AABB } from '../math/aabb';
 import { clamp } from '../math/vec3';
+import { gridCellAABBs, type GridCollision } from '../world/mapCollision';
 import { collideAndSlide } from './collision';
 import {
   AIR_ACCEL,
@@ -24,8 +25,12 @@ import type { MoveState, MovementProfile, PlayerInput } from './types';
 export interface CollisionWorld {
   colliders: readonly AABB[];
   groundY: number;
-  /** Soft play-area half-extent; players are clamped inside ±bounds. */
+  /** Soft play-area half-extent; players are clamped inside ±bounds (procedural). */
   bounds: number;
+  /** Voxel grid collision for GLB maps (absent for procedural maps). */
+  grid?: GridCollision | null;
+  /** Explicit play-area box (GLB maps aren't centred on the origin). */
+  boundsBox?: { minX: number; maxX: number; minZ: number; maxZ: number } | null;
 }
 
 const lerpTo = (current: number, target: number, rate: number, dt: number): number =>
@@ -98,13 +103,25 @@ export function stepMovement(
   state.position.y += state.velocity.y * dt;
   state.position.z += state.velocity.z * dt;
 
-  // Resolve collisions + ground.
-  state.onGround = collideAndSlide(state, height, PLAYER_RADIUS, world.colliders, world.groundY);
+  // Resolve collisions + ground. For GLB maps, gather nearby solid grid cells as
+  // AABB colliders; procedural maps use their static collider list directly.
+  let colliders = world.colliders;
+  if (world.grid) {
+    const cells: AABB[] = world.colliders.length ? [...world.colliders] : [];
+    gridCellAABBs(world.grid, state.position, height, PLAYER_RADIUS, cells);
+    colliders = cells;
+  }
+  state.onGround = collideAndSlide(state, height, PLAYER_RADIUS, colliders, world.groundY);
 
   // Keep inside the play area.
-  const b = world.bounds;
-  state.position.x = clamp(state.position.x, -b, b);
-  state.position.z = clamp(state.position.z, -b, b);
+  if (world.boundsBox) {
+    state.position.x = clamp(state.position.x, world.boundsBox.minX, world.boundsBox.maxX);
+    state.position.z = clamp(state.position.z, world.boundsBox.minZ, world.boundsBox.maxZ);
+  } else {
+    const b = world.bounds;
+    state.position.x = clamp(state.position.x, -b, b);
+    state.position.z = clamp(state.position.z, -b, b);
+  }
 
   return state;
 }

@@ -58,7 +58,7 @@ const roster = (): PlayerPublic[] => [
 /** White-box accessor for the instance internals we drive in tests. */
 interface Internals {
   players: Map<string, ServerPlayer>;
-  world: { colliders: unknown[] };
+  worldColliders: unknown[];
   scores: Record<'red' | 'blue', number>;
   step(): void;
 }
@@ -73,11 +73,12 @@ function setup(weapons = new Map<string, WeaponConfig>()) {
     createDefaultLobbySettings(),
     roster(),
     weapons,
+    null,
     () => {},
   );
   const internals = game as unknown as Internals;
   // Clear world colliders so line-of-sight is unobstructed for the test.
-  internals.world.colliders.length = 0;
+  internals.worldColliders.length = 0;
   const a = internals.players.get('a')!;
   const b = internals.players.get('b')!;
   // Place B 5m directly in front of A (A faces -Z).
@@ -162,7 +163,7 @@ describe('GameInstance projectiles + splash', () => {
   it('spawns a projectile, detonates on the target, and applies splash damage', () => {
     const weapons = new Map<string, WeaponConfig>([['rocket', rocket()]]);
     const { game, sink, a, b, internals } = setup(weapons);
-    internals.world.colliders.length = 0;
+    internals.worldColliders.length = 0;
     a.weaponId = 'rocket';
     a.move.position = { x: 0, y: 0, z: 0 };
     b.move.position = { x: 0, y: 0, z: -8 };
@@ -190,7 +191,7 @@ describe('GameInstance projectiles + splash', () => {
   it('does not splash a teammate when friendly fire is off', () => {
     const weapons = new Map<string, WeaponConfig>([['rocket', rocket()]]);
     const { game, a, b, internals } = setup(weapons);
-    internals.world.colliders.length = 0;
+    internals.worldColliders.length = 0;
     a.weaponId = 'rocket';
     b.team = 'red'; // teammate
     a.move.position = { x: 0, y: 0, z: 0 };

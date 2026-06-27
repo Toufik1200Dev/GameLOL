@@ -10,7 +10,7 @@ import {
 } from '../constants';
 import type { LobbySettings } from '../types/lobby';
 
-export const DEFAULT_MAP_ID = 'procedural-default';
+export const DEFAULT_MAP_ID = 'plaza-night-time';
 
 export const createDefaultLobbySettings = (): LobbySettings => ({
   maxPlayers: DEFAULT_MAX_PLAYERS,

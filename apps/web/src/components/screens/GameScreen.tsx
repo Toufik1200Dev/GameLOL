@@ -6,9 +6,17 @@
  * into it + the HUD, and renders the 3D scene with overlays (click-to-play,
  * pause, scoreboard, victory).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { DEFAULT_MAX_HEARTS, generateWorld, type TeamId, type Vec3 } from '@game/shared';
+import {
+  DEFAULT_MAX_HEARTS,
+  buildGridCollision,
+  generateWorld,
+  type CollisionWorld,
+  type MapColliderData,
+  type TeamId,
+  type Vec3,
+} from '@game/shared';
 import { getSocket } from '../../lib/socket';
 import { useLobbyStore } from '../../stores/lobbyStore';
 import { useUIStore } from '../../stores/uiStore';
@@ -16,9 +24,17 @@ import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
 import { useGameControls } from '../../game/input/useGameControls';
 import { NetGameClient } from '../../game/net/NetGameClient';
-import { GameScene } from '../r3f/GameScene';
+import { GameScene, type SceneInfo } from '../r3f/GameScene';
 import { HUD } from '../game/HUD';
+import { LoadingScreen } from './LoadingScreen';
 import { Button, Panel } from '../ui/primitives';
+
+interface MatchSetup {
+  client: NetGameClient;
+  scene: SceneInfo;
+  spawnYaw: number;
+  worldSize: number;
+}
 
 const TEAM_COLOR: Record<TeamId, string> = { red: '#ff4d5e', blue: '#4c8bff' };
 const TEAM_LABEL: Record<TeamId | 'draw', string> = {
@@ -38,30 +54,88 @@ export function GameScreen() {
   const ended = useGameStore((s) => s.ended);
   const scoreboardOpen = useGameStore((s) => s.scoreboardOpen);
 
-  // Build the world + client ONCE from the start payload.
-  const setup = useMemo(() => {
-    if (!gameStart || !playerId) return null;
-    const world = generateWorld(gameStart.mapSeed, {
-      size: undefined,
-    });
-    const self = gameStart.players.find((p) => p.id === playerId);
-    const team: TeamId = self?.team ?? 'red';
-    const spawn = world.spawns[team][0] ?? { position: { x: 0, y: 0, z: 0 } as Vec3, yaw: 0 };
-    const collisionWorld = {
-      colliders: world.colliders,
-      groundY: world.groundY,
-      bounds: world.bounds,
-    };
-    const client = new NetGameClient(getSocket(), playerId, collisionWorld, spawn.position);
-    return { world, client, spawnYaw: spawn.yaw };
-  }, [gameStart, playerId]);
+  const [setup, setSetup] = useState<MatchSetup | null>(null);
+  const controls = useGameControls(0);
 
-  const controls = useGameControls(setup?.spawnYaw ?? 0);
-
-  // Ensure the asset manifest is available for in-game character/weapon models.
+  // Resolve the map (procedural or GLB), fetch its collider data, and build the
+  // net client. Async because GLB maps load their voxel colliders over the wire.
   useEffect(() => {
-    useAssetStore.getState().load();
-  }, []);
+    if (!gameStart || !playerId) return;
+    let cancelled = false;
+
+    const build = async () => {
+      await useAssetStore.getState().load();
+      const manifest = useAssetStore.getState().manifest;
+      const self = gameStart.players.find((p) => p.id === playerId);
+      const team: TeamId = self?.team ?? 'red';
+      const mapEntry = manifest.maps.find((m) => m.id === gameStart.mapId);
+
+      let collision: CollisionWorld;
+      let scene: SceneInfo;
+      let spawn: { position: Vec3; yaw: number };
+      let worldSize: number;
+
+      if (mapEntry?.model && mapEntry.colliders) {
+        // GLB map: fetch voxel colliders, render the model.
+        const data = (await (
+          await fetch(mapEntry.colliders, { cache: 'force-cache' })
+        ).json()) as MapColliderData;
+        const grid = buildGridCollision(data);
+        const sizeX = data.bounds.max.x - data.bounds.min.x;
+        const sizeZ = data.bounds.max.z - data.bounds.min.z;
+        worldSize = Math.max(sizeX, sizeZ) / 2;
+        collision = {
+          colliders: [],
+          grid,
+          groundY: data.groundY,
+          bounds: 0,
+          boundsBox: {
+            minX: data.bounds.min.x,
+            maxX: data.bounds.max.x,
+            minZ: data.bounds.min.z,
+            maxZ: data.bounds.max.z,
+          },
+        };
+        spawn = data.spawns[team]?.[0] ?? { position: { x: 0, y: data.groundY, z: 0 }, yaw: 0 };
+        scene = {
+          collision,
+          proceduralWorld: null,
+          mapModelUrl: mapEntry.model,
+          skyColor: mapEntry.config.skyColor,
+          fogColor: mapEntry.config.fogColor,
+          groundColor: '#5fae54',
+          size: worldSize,
+          glb: true,
+        };
+      } else {
+        // Procedural fallback.
+        const world = generateWorld(gameStart.mapSeed);
+        collision = { colliders: world.colliders, groundY: world.groundY, bounds: world.bounds };
+        worldSize = world.size;
+        spawn = world.spawns[team][0] ?? { position: { x: 0, y: 0, z: 0 } as Vec3, yaw: 0 };
+        scene = {
+          collision,
+          proceduralWorld: world,
+          mapModelUrl: null,
+          skyColor: world.skyColor,
+          fogColor: world.fogColor,
+          groundColor: world.groundColor,
+          size: world.size,
+          glb: false,
+        };
+      }
+
+      if (cancelled) return;
+      controls.current.yaw = spawn.yaw;
+      const client = new NetGameClient(getSocket(), playerId, collision, spawn.position);
+      setSetup({ client, scene, spawnYaw: spawn.yaw, worldSize });
+    };
+
+    void build();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameStart, playerId, controls]);
 
   // Wire authoritative events.
   useEffect(() => {
@@ -109,7 +183,7 @@ export function GameScreen() {
     };
   }, [setup, playerId]);
 
-  if (!setup) return null;
+  if (!setup) return <LoadingScreen />;
 
   const leaveMatch = () => {
     getSocket().emit('game:leaveMatch');
@@ -129,8 +203,8 @@ export function GameScreen() {
 
   return (
     <div ref={containerRef} className="relative h-full w-full bg-black">
-      <GameScene client={setup.client} world={setup.world} controls={controls.current} />
-      <HUD worldSize={setup.world.size} />
+      <GameScene client={setup.client} scene={setup.scene} controls={controls.current} />
+      <HUD worldSize={setup.worldSize} />
 
       {/* Click-to-play prompt */}
       {!locked && !paused && !ended && (

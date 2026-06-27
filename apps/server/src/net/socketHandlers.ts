@@ -17,6 +17,7 @@ import { LobbyManager } from '../lobby/LobbyManager';
 import type { Lobby } from '../lobby/Lobby';
 import { GameInstance } from '../game/GameInstance';
 import { weaponRegistry } from '../game/WeaponRegistry';
+import { loadMapColliders } from '../game/MapLoader';
 import { logger } from '../logger';
 
 type GameServer = Server<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
@@ -211,8 +212,9 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
         startedAt: Date.now(),
       };
 
-      // Read authoritative weapon stats fresh (picks up newly added weapons).
+      // Read authoritative weapon stats + map collision fresh.
       const weapons = weaponRegistry.scan();
+      const mapData = loadMapColliders(lobby.settings.mapId);
 
       // Spin up the authoritative match. onEnd returns the lobby to the waiting
       // state so players can ready up and rematch.
@@ -223,6 +225,7 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
         lobby.settings,
         payload.players,
         weapons,
+        mapData,
         () => {
           games.delete(code);
           const lob = manager.get(code);

@@ -1,0 +1,13 @@
+{
+  "name": "Blunderbuss",
+  "description": "Close-range black-powder slug thrower.",
+  "damage": 4,
+  "fireRate": 70,
+  "magazine": 2,
+  "reloadSpeed": 2.8,
+  "projectileSpeed": 0,
+  "recoil": 0.95,
+  "spread": 0.12,
+  "range": 28,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+}

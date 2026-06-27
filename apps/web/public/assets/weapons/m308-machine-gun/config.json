@@ -1,0 +1,13 @@
+{
+  "name": ".308 Machine Gun",
+  "description": "Belt-fed heavy machine gun.",
+  "damage": 2,
+  "fireRate": 550,
+  "magazine": 100,
+  "reloadSpeed": 5.0,
+  "projectileSpeed": 0,
+  "recoil": 0.6,
+  "spread": 0.045,
+  "range": 90,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+}

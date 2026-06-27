@@ -25,8 +25,9 @@ export * from './sim/collision';
 export * from './sim/movement';
 export * from './sim/combat';
 
-// Procedural world generation
+// Procedural world generation + GLB-map voxel collision
 export * from './world/worldgen';
+export * from './world/mapCollision';
 
 // Config defaults + schemas + manifest types
 export * from './config/defaults';

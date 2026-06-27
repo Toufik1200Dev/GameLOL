@@ -18,6 +18,8 @@ import {
   EYE_HEIGHT,
   fireInterval,
   rayAABB,
+  raycastGrid,
+  type CollisionWorld,
   type GeneratedWorld,
 } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
@@ -27,8 +29,21 @@ import { getSocket } from '../../lib/socket';
 import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
 import { World } from './World';
+import { MapModel } from './MapModel';
 import { Players } from './Players';
 import { WeaponModel } from './CharacterModel';
+
+/** Everything the scene needs to render + collide, for procedural OR GLB maps. */
+export interface SceneInfo {
+  collision: CollisionWorld;
+  proceduralWorld: GeneratedWorld | null;
+  mapModelUrl: string | null;
+  skyColor: string;
+  fogColor: string;
+  groundColor: string;
+  size: number;
+  glb: boolean;
+}
 
 interface Tracer {
   id: number;
@@ -39,14 +54,38 @@ interface Tracer {
 
 const TRACER_LIFE = 90;
 
-function SceneEnv({ world }: { world: GeneratedWorld }) {
-  const size = world.size;
+function SceneEnv({ scene }: { scene: SceneInfo }) {
+  const size = scene.size;
+  if (scene.glb) {
+    // GLB maps ship their own (often baked) look — light them softly, no daytime
+    // sun/sky, and keep player shadows only.
+    return (
+      <>
+        <fog attach="fog" args={[scene.fogColor, size * 0.9, size * 3]} />
+        <ambientLight intensity={0.85} />
+        <hemisphereLight intensity={0.5} color={scene.skyColor} groundColor="#05070d" />
+        <directionalLight
+          castShadow
+          position={[size * 0.6, size * 1.4, size * 0.4]}
+          intensity={0.6}
+          shadow-mapSize={[2048, 2048]}
+          shadow-bias={-0.0005}
+          shadow-camera-near={1}
+          shadow-camera-far={size * 4}
+          shadow-camera-left={-size}
+          shadow-camera-right={size}
+          shadow-camera-top={size}
+          shadow-camera-bottom={-size}
+        />
+      </>
+    );
+  }
   return (
     <>
       <Sky distance={450000} sunPosition={[120, 60, 80]} turbidity={5} rayleigh={2.2} />
-      <fog attach="fog" args={[world.fogColor, size * 0.85, size * 2.6]} />
+      <fog attach="fog" args={[scene.fogColor, size * 0.85, size * 2.6]} />
       <ambientLight intensity={0.3} />
-      <hemisphereLight intensity={0.55} color={world.skyColor} groundColor={world.groundColor} />
+      <hemisphereLight intensity={0.55} color={scene.skyColor} groundColor={scene.groundColor} />
       <directionalLight
         castShadow
         position={[size * 0.8, size * 1.2, size * 0.6]}
@@ -104,12 +143,12 @@ function Tracers({ pool }: { pool: React.MutableRefObject<Tracer[]> }) {
 
 function GameLoop({
   client,
-  world,
+  collision,
   controls,
   pool,
 }: {
   client: NetGameClient;
-  world: GeneratedWorld;
+  collision: CollisionWorld;
   controls: ControlsRef;
   pool: React.MutableRefObject<Tracer[]>;
 }) {
@@ -177,9 +216,16 @@ function GameLoop({
     } else {
       let dist = c.aim ? 2.2 : 4.6;
       const back = dir.clone().multiplyScalar(-1);
-      for (const box of world.colliders) {
-        const t = rayAABB(head, back, box);
-        if (t !== null && t > 0 && t < dist) dist = Math.max(1, t - 0.3);
+      const backVec = { x: back.x, y: back.y, z: back.z };
+      const headVec = { x: head.x, y: head.y, z: head.z };
+      if (collision.grid) {
+        const t = raycastGrid(collision.grid, headVec, backVec, dist);
+        if (t !== null && t > 0) dist = Math.max(1, t - 0.3);
+      } else {
+        for (const box of collision.colliders) {
+          const t = rayAABB(headVec, backVec, box);
+          if (t !== null && t > 0 && t < dist) dist = Math.max(1, t - 0.3);
+        }
       }
       const camPos = head.clone().add(back.multiplyScalar(dist));
       camera.position.lerp(camPos, 1 - Math.exp(-30 * dt));
@@ -393,11 +439,11 @@ function FirstPersonViewmodel({
 
 export function GameScene({
   client,
-  world,
+  scene,
   controls,
 }: {
   client: NetGameClient;
-  world: GeneratedWorld;
+  scene: SceneInfo;
   controls: ControlsRef;
 }) {
   const quality = useSettingsStore((s) => s.graphicsQuality);
@@ -413,15 +459,19 @@ export function GameScene({
       shadows={quality !== 'low'}
       dpr={dpr}
       gl={{ antialias: quality !== 'low', toneMapping: THREE.ACESFilmicToneMapping }}
-      camera={{ fov, near: 0.1, far: world.size * 6, position: [0, 5, 10] }}
+      camera={{ fov, near: 0.1, far: Math.max(400, scene.size * 6), position: [0, 5, 10] }}
       onClick={(e) => (e.target as HTMLCanvasElement).requestPointerLock?.()}
     >
-      <color attach="background" args={[world.skyColor]} />
-      <SceneEnv world={world} />
-      <World world={world} />
+      <color attach="background" args={[scene.skyColor]} />
+      <SceneEnv scene={scene} />
+      {scene.proceduralWorld ? (
+        <World world={scene.proceduralWorld} />
+      ) : scene.mapModelUrl ? (
+        <MapModel url={scene.mapModelUrl} />
+      ) : null}
       <Players client={client} controls={controls} />
       <FirstPersonViewmodel client={client} controls={controls} />
-      <GameLoop client={client} world={world} controls={controls} pool={pool} />
+      <GameLoop client={client} collision={scene.collision} controls={controls} pool={pool} />
       <Tracers pool={pool} />
       <CombatVFX />
       <PostFX quality={quality} />

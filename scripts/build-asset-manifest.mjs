@@ -74,8 +74,12 @@ function scanCategory(categoryKey, requiredFiles) {
         entry.animations = `${basePath}/animations.glb`;
     }
     if (categoryKey === 'weapons') entry.model = `${basePath}/weapon.glb`;
-    if (categoryKey === 'maps' && existsSync(join(folder, 'preview.png'))) {
-      entry.preview = `${basePath}/preview.png`;
+    if (categoryKey === 'maps') {
+      entry.preview = existsSync(join(folder, 'preview.png')) ? `${basePath}/preview.png` : null;
+      entry.model = existsSync(join(folder, 'map.glb')) ? `${basePath}/map.glb` : null;
+      entry.colliders = existsSync(join(folder, 'colliders.json'))
+        ? `${basePath}/colliders.json`
+        : null;
     }
     entries.push(entry);
   }

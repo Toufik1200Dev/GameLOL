@@ -27,6 +27,10 @@ export interface MapManifestEntry {
   id: string;
   path: string;
   preview: string | null;
+  /** GLB map model URL (null ⇒ procedural map). */
+  model: string | null;
+  /** Voxel collider data URL for GLB maps (null ⇒ procedural). */
+  colliders: string | null;
   config: MapConfig;
 }
 

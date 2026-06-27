@@ -1,0 +1,13 @@
+{
+  "name": "Tommy Gun",
+  "description": "Rapid-fire submachine gun.",
+  "damage": 1,
+  "fireRate": 700,
+  "magazine": 50,
+  "reloadSpeed": 2.2,
+  "projectileSpeed": 0,
+  "recoil": 0.35,
+  "spread": 0.035,
+  "range": 55,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+}

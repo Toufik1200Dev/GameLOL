@@ -20,16 +20,21 @@ import {
   SPRINT_MULTIPLIER,
   TICK_DURATION,
   TICK_RATE,
+  buildGridCollision,
   clamp,
   createMoveState,
   generateWorld,
   playerHitBox,
   rayAABB,
+  raycastGrid,
   stepMovement,
+  type AABB,
   type ClientToServerEvents,
-  type GeneratedWorld,
+  type CollisionWorld,
+  type GridCollision,
   type InterServerEvents,
   type LobbySettings,
+  type MapColliderData,
   type MoveState,
   type MovementProfile,
   type NetPlayerState,
@@ -38,6 +43,7 @@ import {
   type ServerToClientEvents,
   type ShootCommand,
   type SocketData,
+  type SpawnPoint,
   type TeamId,
   type Vec3,
   type WeaponConfig,
@@ -101,12 +107,11 @@ const PROJECTILE_MAX_LIFETIME = 6; // seconds
 export class GameInstance {
   readonly code: string;
   private readonly io: GameServer;
-  private readonly world: GeneratedWorld;
-  private readonly collisionWorld: {
-    colliders: GeneratedWorld['colliders'];
-    groundY: number;
-    bounds: number;
-  };
+  private readonly collisionWorld: CollisionWorld;
+  private readonly grid: GridCollision | null;
+  private readonly worldColliders: readonly AABB[];
+  private readonly spawns: Record<TeamId, SpawnPoint[]>;
+  private readonly groundY: number;
   private readonly settings: LobbySettings;
   private readonly players = new Map<string, ServerPlayer>();
   private readonly weapons: Map<string, WeaponConfig>;
@@ -135,6 +140,7 @@ export class GameInstance {
     settings: LobbySettings,
     roster: PlayerPublic[],
     weapons: Map<string, WeaponConfig>,
+    mapData: MapColliderData | null,
     onEnd: () => void,
   ) {
     this.io = io;
@@ -142,12 +148,39 @@ export class GameInstance {
     this.settings = settings;
     this.weapons = weapons;
     this.onEnd = onEnd;
-    this.world = generateWorld(seed);
-    this.collisionWorld = {
-      colliders: this.world.colliders,
-      groundY: this.world.groundY,
-      bounds: this.world.bounds,
-    };
+
+    if (mapData) {
+      // GLB map: voxel-grid collision + explicit play-area box + map spawns.
+      this.grid = buildGridCollision(mapData);
+      this.worldColliders = [];
+      this.spawns = mapData.spawns;
+      this.groundY = mapData.groundY;
+      this.collisionWorld = {
+        colliders: [],
+        grid: this.grid,
+        groundY: mapData.groundY,
+        bounds: 0,
+        boundsBox: {
+          minX: mapData.bounds.min.x,
+          maxX: mapData.bounds.max.x,
+          minZ: mapData.bounds.min.z,
+          maxZ: mapData.bounds.max.z,
+        },
+      };
+    } else {
+      // Procedural fallback.
+      const world = generateWorld(seed);
+      this.grid = null;
+      this.worldColliders = world.colliders;
+      this.spawns = world.spawns;
+      this.groundY = world.groundY;
+      this.collisionWorld = {
+        colliders: world.colliders,
+        groundY: world.groundY,
+        bounds: world.bounds,
+      };
+    }
+
     for (const p of roster) this.addPlayer(p);
   }
 
@@ -158,7 +191,7 @@ export class GameInstance {
     this.tickTimer = setInterval(() => this.step(), 1000 / TICK_RATE);
     this.snapshotTimer = setInterval(() => this.broadcast(), 1000 / SNAPSHOT_RATE);
     logger.info(
-      `game ${this.code}: started (${this.players.size} players, seed=${this.world.seed})`,
+      `game ${this.code}: started (${this.players.size} players, map=${this.grid ? 'glb' : 'procedural'})`,
     );
   }
 
@@ -226,6 +259,20 @@ export class GameInstance {
     if (!p) return;
     if (p.inputQueue.length >= MAX_QUEUE) p.inputQueue.length = 0; // abuse guard
     p.inputQueue.push(input);
+  }
+
+  /** Nearest static-world hit distance along a ray (voxel grid or AABB list). */
+  private worldRayDistance(origin: Vec3, dir: Vec3, maxDist: number): number {
+    if (this.grid) {
+      const t = raycastGrid(this.grid, origin, dir, maxDist);
+      return t ?? maxDist;
+    }
+    let nearest = maxDist;
+    for (const box of this.worldColliders) {
+      const t = rayAABB(origin, dir, box);
+      if (t !== null && t < nearest) nearest = t;
+    }
+    return nearest;
   }
 
   /** Resolve a player's authoritative weapon stats (config or default fallback). */
@@ -300,11 +347,7 @@ export class GameInstance {
     const rewindTo = now - (INTERPOLATION_DELAY_MS + shooter.ping / 2);
     const rewound = this.positionsAt(rewindTo);
 
-    let nearestWorld = weapon.range;
-    for (const box of this.world.colliders) {
-      const t = rayAABB(origin, dir, box);
-      if (t !== null && t < nearestWorld) nearestWorld = t;
-    }
+    const nearestWorld = this.worldRayDistance(origin, dir, weapon.range);
 
     let victim: ServerPlayer | null = null;
     let victimT = nearestWorld;
@@ -400,15 +443,13 @@ export class GameInstance {
           directVictim = other;
         }
       }
-      for (const box of this.world.colliders) {
-        const t = rayAABB(p.pos, p.dir, box);
-        if (t !== null && t >= 0 && t < hitT) {
-          hitT = t;
-          directVictim = null;
-        }
+      const worldT = this.worldRayDistance(p.pos, p.dir, hitT);
+      if (worldT < hitT) {
+        hitT = worldT;
+        directVictim = null;
       }
       if (p.dir.y < 0) {
-        const tGround = (this.world.groundY - p.pos.y) / p.dir.y;
+        const tGround = (this.groundY - p.pos.y) / p.dir.y;
         if (tGround >= 0 && tGround < hitT) {
           hitT = tGround;
           directVictim = null;
@@ -507,7 +548,7 @@ export class GameInstance {
   }
 
   private spawn(player: ServerPlayer): void {
-    const spawns = this.world.spawns[player.team];
+    const spawns = this.spawns[player.team];
     const idx = this.spawnCursor[player.team] % spawns.length;
     this.spawnCursor[player.team] += 1;
     const spawn = spawns[idx]!;

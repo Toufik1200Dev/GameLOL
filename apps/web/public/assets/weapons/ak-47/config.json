@@ -1,0 +1,13 @@
+{
+  "name": "AK-47",
+  "description": "Hard-hitting assault rifle.",
+  "damage": 2,
+  "fireRate": 600,
+  "magazine": 30,
+  "reloadSpeed": 2.5,
+  "projectileSpeed": 0,
+  "recoil": 0.5,
+  "spread": 0.03,
+  "range": 75,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+}
