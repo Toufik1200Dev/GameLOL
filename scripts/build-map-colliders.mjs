@@ -23,8 +23,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAPS_DIR = resolve(__dirname, '../apps/web/public/assets/maps');
 
 const CELL_SIZE = 1.5; // metres per voxel
-const PLAY_HEIGHT = 12; // collide from floor up to floor + this (metres)
 const MAX_TRI_SAMPLES = 48; // per-triangle surface sampling cap
+const SPAWN_HEADROOM = 3; // empty cells required above a spawn floor
 
 // ---- tiny mat4 (column-major) ----
 const composeTRS = (t, q, s) => {
@@ -167,14 +167,15 @@ async function processMap(id, folder) {
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   for (const n of scene.listChildren()) walk(n, identity);
 
-  // 3) Voxelise into a solid grid over the play area.
+  // 3) Voxelise into a solid grid over the FULL map height, so collision covers
+  //    upper structures and "open to sky" spawn checks see overhead decks.
   const groundY = min[1];
   const origin = [min[0], groundY, min[2]];
   const nx = Math.max(1, Math.ceil((max[0] - min[0]) / CELL_SIZE));
-  const ny = Math.max(1, Math.ceil(PLAY_HEIGHT / CELL_SIZE));
+  const ny = Math.max(1, Math.ceil((max[1] - min[1]) / CELL_SIZE));
   const nz = Math.max(1, Math.ceil((max[2] - min[2]) / CELL_SIZE));
   const solid = new Uint8Array(nx * ny * nz);
-  const yTop = groundY + PLAY_HEIGHT;
+  const yTop = max[1];
 
   const markPoint = (x, y, z) => {
     if (y < groundY || y > yTop) return;
@@ -217,21 +218,26 @@ async function processMap(id, folder) {
   let solidCount = 0;
   for (const v of solid) solidCount += v;
 
-  // 4) Spawns: pick floor columns that are OPEN TO THE SKY (no solid anywhere in
-  //    the column) on each half, so players never spawn under the overhead deck
-  //    or inside the surrounding buildings.
+  // 4) Spawns. Find the widest OPEN-TO-SKY area (no solid in the whole column),
+  //    then put both teams along the SAME Z line: teammates clustered together,
+  //    the enemy team offset along X (a little farther). Falls back to merely
+  //    "standable" columns if the map is fully covered.
   const openColumn = (ix, iz) => {
-    for (let iy = 0; iy < ny; iy++) {
-      if (solid[(iy * nz + iz) * nx + ix]) return false;
-    }
+    for (let iy = 0; iy < ny; iy++) if (solid[(iy * nz + iz) * nx + ix]) return false;
     return true;
   };
-  const collectOpen = (izStart, izEnd) => {
+  const standableColumn = (ix, iz) => {
+    for (let iy = 0; iy < SPAWN_HEADROOM; iy++) if (solid[(iy * nz + iz) * nx + ix]) return false;
+    return true;
+  };
+  const collect = (test) => {
     const pts = [];
-    for (let iz = izStart; iz < izEnd; iz++) {
-      for (let ix = Math.floor(nx * 0.15); ix < Math.floor(nx * 0.85); ix++) {
-        if (openColumn(ix, iz)) {
+    for (let iz = 0; iz < nz; iz++) {
+      for (let ix = 0; ix < nx; ix++) {
+        if (test(ix, iz)) {
           pts.push({
+            ix,
+            iz,
             x: origin[0] + (ix + 0.5) * CELL_SIZE,
             z: origin[2] + (iz + 0.5) * CELL_SIZE,
           });
@@ -240,24 +246,35 @@ async function processMap(id, folder) {
     }
     return pts;
   };
-  const cxWorld = (min[0] + max[0]) / 2;
-  const czWorld = (min[2] + max[2]) / 2;
-  const pickSpread = (pts, yaw) => {
-    if (pts.length === 0) {
-      return [{ position: { x: cxWorld, y: groundY + 0.1, z: czWorld }, yaw }];
-    }
-    pts.sort((a, b) => a.x - b.x);
-    const out = [];
-    for (let i = 0; i < 4; i++) {
-      const p = pts[Math.floor(((i + 0.5) / 4) * pts.length)];
-      out.push({ position: { x: p.x, y: groundY + 0.1, z: p.z }, yaw });
-    }
-    return out;
-  };
-  // Red occupies the lower-Z half (faces +Z toward centre), blue the upper-Z half.
+
+  let openPts = collect(openColumn);
+  if (openPts.length < 8) openPts = collect(standableColumn);
+
+  // Z line with the most open columns = the widest clear lane.
+  const perZ = new Map();
+  for (const p of openPts) perZ.set(p.iz, (perZ.get(p.iz) ?? 0) + 1);
+  let z0iz = Math.floor(nz / 2);
+  let bestCount = -1;
+  for (const [iz, c] of perZ) if (c > bestCount) [bestCount, z0iz] = [c, iz];
+  const z0 = origin[2] + (z0iz + 0.5) * CELL_SIZE;
+  const band = openPts.filter((p) => Math.abs(p.iz - z0iz) <= 4);
+  const bandCx = band.length ? band.reduce((a, p) => a + p.x, 0) / band.length : 0;
+
+  const SEP = 12; // metres between team centres
+  const nearest4 = (targetX) =>
+    band
+      .slice()
+      .sort((a, b) => Math.hypot(a.x - targetX, a.z - z0) - Math.hypot(b.x - targetX, b.z - z0))
+      .slice(0, 4);
+  const toSpawn = (pts, yaw) =>
+    (pts.length ? pts : [{ x: bandCx, z: z0 }]).map((p) => ({
+      position: { x: p.x, y: groundY + 0.1, z: p.z },
+      yaw,
+    }));
+  // Red on the left (faces +X toward the enemy), blue on the right (faces -X).
   const spawns = {
-    red: pickSpread(collectOpen(Math.floor(nz * 0.18), Math.floor(nz * 0.42)), Math.PI),
-    blue: pickSpread(collectOpen(Math.floor(nz * 0.58), Math.floor(nz * 0.82)), 0),
+    red: toSpawn(nearest4(bandCx - SEP), -Math.PI / 2),
+    blue: toSpawn(nearest4(bandCx + SEP), Math.PI / 2),
   };
 
   const out = {

@@ -21,8 +21,8 @@ import { CharacterModel, WeaponModel } from './CharacterModel';
 
 const TEAM_COLOR: Record<TeamId, string> = { red: '#ff4d5e', blue: '#4c8bff' };
 
-/** Where the held weapon sits relative to the avatar feet (right side, chest, forward). */
-const HAND_ANCHOR: [number, number, number] = [0.3, PLAYER_HEIGHT * 0.6, -0.2];
+/** Where the held weapon sits relative to the avatar feet (right hand, held forward). */
+const HAND_ANCHOR: [number, number, number] = [0.25, PLAYER_HEIGHT * 0.55, -0.5];
 
 /** Neutral capsule avatar (engine primitive; fallback when no character model). */
 function CapsuleAvatar({ team }: { team: TeamId }) {
