@@ -17,14 +17,25 @@ import { fileURLToPath } from 'node:url';
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import draco3d from 'draco3dgltf';
-import { dedup, draco, metalRough, prune, textureCompress, weld } from '@gltf-transform/functions';
+import {
+  dedup,
+  draco,
+  getBounds,
+  metalRough,
+  prune,
+  textureCompress,
+  weld,
+} from '@gltf-transform/functions';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAPS_DIR = resolve(__dirname, '../apps/web/public/assets/maps');
 
-const CELL_SIZE = 1.5; // metres per voxel
-const MAX_TRI_SAMPLES = 48; // per-triangle surface sampling cap
-const SPAWN_HEADROOM = 3; // empty cells required above a spawn floor
+const CELL_SIZE = 1.0; // metres per voxel
+const MAX_TRI_SAMPLES = 64; // per-triangle surface sampling cap
+const SPAWN_HEADROOM = 4; // empty cells required above a spawn floor
+const PLAY_HEIGHT_CAP = 36; // metres of collision above the floor (bounds the grid)
+const MAP_TARGET_SIZE = 250; // scale oversized maps so their footprint ≈ this
+const MAP_SCALE_THRESHOLD = 400; // only rescale maps bigger than this
 
 // ---- tiny mat4 (column-major) ----
 const composeTRS = (t, q, s) => {
@@ -98,26 +109,51 @@ async function processMap(id, folder) {
   console.log(`[map] ${id}: reading map.glb`);
   const doc = await io.read(glbPath);
 
-  // 1) Clean + compress (materials, textures, Draco geometry) — but only on the
-  //    first pass. Once processed the GLB is small, so re-runs (e.g. to retune
-  //    collision/spawns) skip this and stay fast + idempotent.
-  const sizeMB = statSync(glbPath).size / (1024 * 1024);
-  if (sizeMB > 40) {
+  // 1) Clean + compress + normalize SIZE — only the first time a map is processed
+  //    (no colliders.json yet). Re-runs to retune collision/spawns stay fast.
+  const collidersPath = join(folder, 'colliders.json');
+  if (!existsSync(collidersPath)) {
+    const sizeMB = statSync(glbPath).size / (1024 * 1024);
+    const usedExts = doc
+      .getRoot()
+      .listExtensionsUsed()
+      .map((e) => e.extensionName);
+    const needsMaterialFix = usedExts.includes('KHR_materials_pbrSpecularGlossiness');
+    const needsDraco = !usedExts.includes('KHR_draco_mesh_compression');
+    console.log(
+      `[map] ${id}: processing (${sizeMB.toFixed(1)}MB, matFix=${needsMaterialFix}, draco=${needsDraco})`,
+    );
+
     const sharp = await loadSharp();
-    const transforms = [metalRough(), dedup(), prune()];
+    const transforms = [];
+    if (needsMaterialFix) transforms.push(metalRough());
+    transforms.push(dedup(), prune());
     if (sharp) {
       transforms.push(
         textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [1024, 1024] }),
       );
-    } else {
-      console.warn('[map] sharp not available — skipping texture compression');
     }
-    transforms.push(weld(), draco());
-    await doc.transform(...transforms);
+    if (needsDraco) transforms.push(weld(), draco());
+    if (transforms.length) await doc.transform(...transforms);
+
+    // Scale oversized maps (e.g. models authored in cm) down to a playable size.
+    const b = getBounds(doc.getRoot().listScenes()[0]);
+    const footprint = Math.max(b.max[0] - b.min[0], b.max[2] - b.min[2]);
+    if (footprint > MAP_SCALE_THRESHOLD) {
+      const s = MAP_TARGET_SIZE / footprint;
+      for (const node of doc.getRoot().listScenes()[0].listChildren()) {
+        node.setTranslation(node.getTranslation().map((v) => v * s));
+        node.setScale(node.getScale().map((v) => v * s));
+      }
+      console.log(
+        `[map] ${id}: scaled by ${s.toFixed(5)} (footprint ${footprint.toFixed(0)} -> ~${MAP_TARGET_SIZE})`,
+      );
+    }
+
     await io.write(glbPath, doc);
-    console.log(`[map] ${id}: cleaned + compressed map.glb written`);
+    console.log(`[map] ${id}: processed map.glb written`);
   } else {
-    console.log(`[map] ${id}: map.glb already processed (${sizeMB.toFixed(1)}MB) — skipping clean`);
+    console.log(`[map] ${id}: already processed (colliders.json present) — skipping clean`);
   }
 
   // 2) Gather world-space triangles + overall bounds.
@@ -167,15 +203,17 @@ async function processMap(id, folder) {
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   for (const n of scene.listChildren()) walk(n, identity);
 
-  // 3) Voxelise into a solid grid over the FULL map height, so collision covers
-  //    upper structures and "open to sky" spawn checks see overhead decks.
+  // 3) Voxelise into a solid grid. Height is capped to PLAY_HEIGHT_CAP above the
+  //    floor (bounds the grid for tall maps; collision only matters near the
+  //    ground).
   const groundY = min[1];
   const origin = [min[0], groundY, min[2]];
+  const playH = Math.min(PLAY_HEIGHT_CAP, max[1] - groundY);
   const nx = Math.max(1, Math.ceil((max[0] - min[0]) / CELL_SIZE));
-  const ny = Math.max(1, Math.ceil((max[1] - min[1]) / CELL_SIZE));
+  const ny = Math.max(1, Math.ceil(playH / CELL_SIZE));
   const nz = Math.max(1, Math.ceil((max[2] - min[2]) / CELL_SIZE));
   const solid = new Uint8Array(nx * ny * nz);
-  const yTop = max[1];
+  const yTop = groundY + playH;
 
   const markPoint = (x, y, z) => {
     if (y < groundY || y > yTop) return;
@@ -209,33 +247,39 @@ async function processMap(id, folder) {
     }
   }
 
-  // Clear the bottom layer — the flat floor is handled by the ground plane, so
-  // this keeps players from getting trapped inside the floor slab.
-  for (let iz = 0; iz < nz; iz++) {
-    for (let ix = 0; ix < nx; ix++) solid[(0 * nz + iz) * nx + ix] = 0;
-  }
-
   let solidCount = 0;
   for (const v of solid) solidCount += v;
 
-  // 4) Spawns. This map has no open sky, so spawn in the LARGEST ground-floor
-  //    area with the most overhead clearance (the most open-feeling indoor hall).
-  //    Both teams share the same Z line: teammates clustered, enemies offset in X.
-  const headroomOf = (ix, iz) => {
+  // 4) Spawns. For each column find the FLOOR surface (lowest solid cell) and the
+  //    clearance above it, then spawn in the largest, most-open area. Players
+  //    spawn ON the floor (works for raised/uneven floors, not just y=0). Both
+  //    teams share the same Z line: teammates clustered, enemies offset in X.
+  const columnInfo = (ix, iz) => {
+    let floorIy = -1;
+    for (let iy = 0; iy < ny; iy++) {
+      if (solid[(iy * nz + iz) * nx + ix]) {
+        floorIy = iy;
+        break;
+      }
+    }
+    if (floorIy < 0) return null; // no floor in this column
     let h = 0;
-    for (let iy = 1; iy < ny; iy++) {
+    for (let iy = floorIy + 1; iy < ny; iy++) {
       if (solid[(iy * nz + iz) * nx + ix]) break;
       h++;
     }
-    return h;
+    return { floorIy, h };
   };
   const all = [];
   for (let iz = 0; iz < nz; iz++) {
     for (let ix = 0; ix < nx; ix++) {
+      const info = columnInfo(ix, iz);
+      if (!info) continue;
       all.push({
         ix,
         iz,
-        h: headroomOf(ix, iz),
+        h: info.h,
+        y: origin[1] + (info.floorIy + 1) * CELL_SIZE,
         x: origin[0] + (ix + 0.5) * CELL_SIZE,
         z: origin[2] + (iz + 0.5) * CELL_SIZE,
       });
@@ -271,9 +315,10 @@ async function processMap(id, folder) {
       .slice()
       .sort((a, b) => Math.hypot(a.x - targetX, a.z - z0) - Math.hypot(b.x - targetX, b.z - z0))
       .slice(0, 4);
+  const fallbackY = band.length ? band[0].y : groundY + 0.1;
   const toSpawn = (pts, yaw) =>
-    (pts.length ? pts : [{ x: bandCx, z: z0 }]).map((p) => ({
-      position: { x: p.x, y: groundY + 0.1, z: p.z },
+    (pts.length ? pts : [{ x: bandCx, z: z0, y: fallbackY }]).map((p) => ({
+      position: { x: p.x, y: (p.y ?? fallbackY) + 0.1, z: p.z },
       yaw,
     }));
   // Red on the left (faces +X toward the enemy), blue on the right (faces -X).
