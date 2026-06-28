@@ -446,8 +446,8 @@ async function processMap(id, folder, props = {}) {
   }
 
   // 6) Turrets (team defenders): place `turretsPerTeam` per side on open floor
-  //    near each team's spawn cluster, spread out and facing the enemy side.
-  const turretsPerTeam = Number.isFinite(cfg.turretsPerTeam) ? cfg.turretsPerTeam : 5;
+  //    near each team's spawn cluster, well separated and facing the enemy side.
+  const turretsPerTeam = Number.isFinite(cfg.turretsPerTeam) ? cfg.turretsPerTeam : 2;
   const turrets = [];
   // Floor columns turrets may stand on: with headroom, on the spawn floor. Unlike
   // props, turrets are base defenders so they MAY sit near spawns. Prefer open-sky
@@ -468,21 +468,18 @@ async function processMap(id, folder, props = {}) {
       const r = Math.hypot(p.x - cx, p.z - cz);
       return r >= 3 && r <= 32 && spawnPts.every((s) => Math.hypot(s.x - p.x, s.z - p.z) > 2);
     });
-    if (cand.length < turretsPerTeam) cand = turretFloor;
-    // Minimum spacing shrinks if candidates are scarce (small maps still fill).
-    const minSep = cand.length > turretsPerTeam * 6 ? 5 : 2.5;
+    if (cand.length === 0) cand = turretFloor;
+    // Greedy: first turret forward (toward mid), the rest maximise separation so
+    // they flank the base and never sit too close together.
     const chosen = [];
     for (let i = 0; i < turretsPerTeam; i++) {
       let pick = null;
       let best = -Infinity;
       for (const c of cand) {
-        const sep = chosen.length
+        if (chosen.some((q) => q.x === c.x && q.z === c.z)) continue;
+        const score = chosen.length
           ? Math.min(...chosen.map((q) => Math.hypot(q.x - c.x, q.z - c.z)))
-          : 999;
-        if (chosen.length && sep < minSep) continue;
-        // Spread turrets out, biased toward the contested middle (forward of base).
-        const towardMid = -Math.hypot(c.x - midX, c.z - midZ) * 0.15;
-        const score = sep + towardMid;
+          : -Math.hypot(c.x - midX, c.z - midZ);
         if (score > best) [best, pick] = [score, c];
       }
       if (!pick) break;
@@ -492,6 +489,25 @@ async function processMap(id, folder, props = {}) {
   };
   placeTurrets('red', spawns.red, -Math.PI / 2);
   placeTurrets('blue', spawns.blue, Math.PI / 2);
+
+  // 7) Render offset: lift the visual map so the floor meets where players rest
+  //    (the voxel cell top). An explicit config.modelOffsetY always wins (hand-
+  //    tuned maps); otherwise auto-compute from the true mesh floor under the
+  //    spawn so new maps don't float/sink without manual tuning.
+  const surfaceY = spawns.red[0]?.position.y ?? spawnSurfaceY;
+  let autoOffset = 0;
+  {
+    const sx = spawns.red[0]?.position.x ?? bandCx;
+    const sz = spawns.red[0]?.position.z ?? z0;
+    let minY = Infinity;
+    for (const v of triangles) {
+      const dx = v[0] - sx;
+      const dz = v[2] - sz;
+      if (dx * dx + dz * dz <= 25 && v[1] <= surfaceY + 3 && v[1] < minY) minY = v[1];
+    }
+    if (minY !== Infinity) autoOffset = surfaceY - 0.1 - minY;
+  }
+  const renderOffsetY = cfg.modelOffsetY !== undefined ? cfg.modelOffsetY : autoOffset;
 
   const out = {
     cellSize: cell,
@@ -504,11 +520,12 @@ async function processMap(id, folder, props = {}) {
     colliders: propColliders,
     props: propInstances,
     turrets,
+    renderOffsetY,
   };
   writeFileSync(join(folder, 'colliders.json'), JSON.stringify(out));
   console.log(
     `[map] ${id}: grid ${nx}x${ny}x${nz} (${solidCount} solid cells), ${propInstances.length} props, ` +
-      `${turrets.length} turrets, ${triangles.length / 3} tris, ` +
+      `${turrets.length} turrets, renderOffsetY ${renderOffsetY.toFixed(2)}, ${triangles.length / 3} tris, ` +
       `bounds ${(max[0] - min[0]).toFixed(0)}x${(max[2] - min[2]).toFixed(0)}`,
   );
 }

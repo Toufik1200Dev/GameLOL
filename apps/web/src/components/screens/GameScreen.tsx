@@ -128,7 +128,11 @@ export function GameScreen() {
           collision,
           proceduralWorld: null,
           mapModelUrl: mapEntry.model,
-          mapModelOffsetY: (mapEntry.config.modelOffsetY ?? 0) * mapScale,
+          // Prefer the build-time auto offset (already map-scaled); fall back to config.
+          mapModelOffsetY:
+            data.renderOffsetY !== undefined
+              ? data.renderOffsetY
+              : (mapEntry.config.modelOffsetY ?? 0) * mapScale,
           mapScale,
           props: data.props ?? [],
           turret: turretEntry,

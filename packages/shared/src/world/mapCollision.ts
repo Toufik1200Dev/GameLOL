@@ -46,6 +46,12 @@ export interface MapColliderData {
   props?: PropInstance[];
   /** Team turret placements (server instantiates live entities from these). */
   turrets?: TurretSpawn[];
+  /**
+   * Visual-only Y lift (metres) auto-computed at build time so the rendered mesh
+   * floor meets where players rest (the voxel cell top). Client-only; preferred
+   * over the config's modelOffsetY when present.
+   */
+  renderOffsetY?: number;
 }
 
 export interface GridCollision {
@@ -113,6 +119,7 @@ export function scaleMapColliderData(data: MapColliderData, scale: number): MapC
     colliders: data.colliders?.map(sBox),
     props: data.props?.map((p) => ({ ...p, x: p.x * s, y: p.y * s, z: p.z * s })),
     turrets: data.turrets?.map((t) => ({ ...t, x: t.x * s, y: t.y * s, z: t.z * s })),
+    renderOffsetY: data.renderOffsetY === undefined ? undefined : data.renderOffsetY * s,
   };
 }
 
