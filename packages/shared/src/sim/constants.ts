@@ -11,6 +11,18 @@ export const CROUCH_HEIGHT = 1.05;
 export const EYE_HEIGHT = 1.55; // camera/eye offset from feet (standing)
 export const CROUCH_EYE_HEIGHT = 0.95;
 
+/**
+ * Tallest obstacle the player auto-climbs instead of being blocked by. Lets the
+ * controller ride over voxel-grid seams, kerbs and short steps so flat ground
+ * never feels "sticky", while still blocking anything taller (real walls).
+ */
+export const STEP_HEIGHT = 0.35;
+
+/** Top slice of the player hit box treated as the head (metres, from the crown down). */
+export const HEAD_HEIGHT = 0.28;
+/** Damage multiplier for a shot that lands in the head box. */
+export const HEADSHOT_MULTIPLIER = 2;
+
 export const BASE_SPEED = 5.2; // m/s walk (fallback when no character config)
 export const SPRINT_MULTIPLIER = 1.65;
 export const CROUCH_MULTIPLIER = 0.5;

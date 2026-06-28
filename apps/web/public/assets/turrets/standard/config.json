@@ -1,0 +1,17 @@
+{
+  "name": "Sentry Turret",
+  "description": "Automated team defense — tracks and fires on the enemy.",
+  "health": 8,
+  "range": 34,
+  "damage": 1,
+  "fireRate": 90,
+  "projectileSpeed": 0,
+  "rotateSpeed": 2.2,
+  "aimTolerance": 0.12,
+  "respawnSec": 20,
+  "scale": 1,
+  "height": 2.4,
+  "yOffset": 0,
+  "colliderSize": { "x": 1.2, "y": 2.4, "z": 1.2 },
+  "animations": { "idle": "Idle1", "fire": "State3", "death": "Destroyed" }
+}

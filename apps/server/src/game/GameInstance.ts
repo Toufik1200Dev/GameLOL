@@ -12,6 +12,7 @@ import {
   DEFAULT_MAX_HEARTS,
   DEFAULT_WEAPON,
   EYE_HEIGHT,
+  HEADSHOT_MULTIPLIER,
   INTERPOLATION_DELAY_MS,
   LAG_COMP_HISTORY_TICKS,
   PLAYER_HEIGHT,
@@ -25,6 +26,7 @@ import {
   createMoveState,
   generateWorld,
   playerHitBox,
+  raycastPlayer,
   rayAABB,
   raycastGrid,
   stepMovement,
@@ -45,6 +47,8 @@ import {
   type SocketData,
   type SpawnPoint,
   type TeamId,
+  type TurretConfig,
+  type TurretState,
   type Vec3,
   type WeaponConfig,
 } from '@game/shared';
@@ -100,6 +104,32 @@ interface ResolvedWeapon {
   splashRadius: number;
 }
 
+/** A live, authoritative combat turret instantiated from a map's turret spawns. */
+interface ServerTurret {
+  id: number;
+  pos: Vec3;
+  team: TeamId;
+  baseYaw: number;
+  yaw: number;
+  health: number;
+  maxHealth: number;
+  alive: boolean;
+  firing: boolean;
+  targetId: string | null;
+  nextFireAt: number; // ms
+  respawnTimer: number; // seconds
+  collider: AABB;
+  muzzleY: number;
+}
+
+/** Who dealt damage — a player (for kills/score) or a team turret. */
+interface Attacker {
+  id: string;
+  name: string;
+  team: TeamId;
+  player: ServerPlayer | null;
+}
+
 const MAX_QUEUE = 64;
 const PER_TICK_DT_BUDGET = TICK_DURATION * 2;
 const PROJECTILE_MAX_LIFETIME = 6; // seconds
@@ -119,6 +149,10 @@ export class GameInstance {
 
   private readonly projectiles: ServerProjectile[] = [];
   private nextProjectileId = 1;
+
+  private readonly turrets: ServerTurret[] = [];
+  private readonly turretCfg: TurretConfig;
+  private simWorld: CollisionWorld | null = null;
 
   private readonly scores: Record<TeamId, number> = { red: 0, blue: 0 };
   private readonly spawnCursor: Record<TeamId, number> = { red: 0, blue: 0 };
@@ -141,12 +175,14 @@ export class GameInstance {
     roster: PlayerPublic[],
     weapons: Map<string, WeaponConfig>,
     mapData: MapColliderData | null,
+    turretConfig: TurretConfig,
     onEnd: () => void,
   ) {
     this.io = io;
     this.code = code;
     this.settings = settings;
     this.weapons = weapons;
+    this.turretCfg = turretConfig;
     this.onEnd = onEnd;
 
     if (mapData) {
@@ -182,6 +218,32 @@ export class GameInstance {
     }
 
     for (const p of roster) this.addPlayer(p);
+
+    // Instantiate team turrets from the map's baked spawns (already map-scaled).
+    const cs = this.turretCfg.colliderSize;
+    let turretId = 1;
+    for (const t of mapData?.turrets ?? []) {
+      const pos: Vec3 = { x: t.x, y: t.y, z: t.z };
+      this.turrets.push({
+        id: turretId++,
+        pos,
+        team: t.team,
+        baseYaw: t.yaw,
+        yaw: t.yaw,
+        health: this.turretCfg.health,
+        maxHealth: this.turretCfg.health,
+        alive: true,
+        firing: false,
+        targetId: null,
+        nextFireAt: 0,
+        respawnTimer: 0,
+        collider: {
+          min: { x: pos.x - cs.x / 2, y: pos.y, z: pos.z - cs.z / 2 },
+          max: { x: pos.x + cs.x / 2, y: pos.y + cs.y, z: pos.z + cs.z / 2 },
+        },
+        muzzleY: pos.y + cs.y * 0.6,
+      });
+    }
   }
 
   // ---- lifecycle ----
@@ -347,55 +409,138 @@ export class GameInstance {
     const rewindTo = now - (INTERPOLATION_DELAY_MS + shooter.ping / 2);
     const rewound = this.positionsAt(rewindTo);
 
-    const nearestWorld = this.worldRayDistance(origin, dir, weapon.range);
-
+    // Start from the nearest static-world hit; players/turrets must beat it.
+    let bestT = this.worldRayDistance(origin, dir, weapon.range);
     let victim: ServerPlayer | null = null;
-    let victimT = nearestWorld;
-    let point: Vec3 = {
-      x: origin.x + dir.x * victimT,
-      y: origin.y + dir.y * victimT,
-      z: origin.z + dir.z * victimT,
-    };
+    let victimTurret: ServerTurret | null = null;
+    let headshot = false;
+
     for (const other of this.players.values()) {
       if (other.id === id || !other.alive) continue;
       if (other.team === shooter.team && !this.settings.friendlyFire) continue;
       const feet = rewound.get(other.id) ?? other.move.position;
-      const t = rayAABB(origin, dir, playerHitBox(feet));
-      if (t !== null && t >= 0 && t < victimT) {
+      const hit = raycastPlayer(origin, dir, feet, bestT);
+      if (hit) {
+        bestT = hit.t;
         victim = other;
-        victimT = t;
-        point = { x: origin.x + dir.x * t, y: origin.y + dir.y * t, z: origin.z + dir.z * t };
+        victimTurret = null;
+        headshot = hit.headshot;
       }
     }
+    // Turret bases block shots (alive or wrecked); only alive enemy turrets take the hit.
+    for (const tr of this.turrets) {
+      const t = rayAABB(origin, dir, tr.collider);
+      if (t === null || t < 0 || t >= bestT) continue;
+      bestT = t;
+      victim = null;
+      headshot = false;
+      victimTurret = tr.alive && tr.team !== shooter.team ? tr : null;
+    }
 
-    if (victim) this.applyDamage(shooter, victim, weapon.damage, point);
+    const point: Vec3 = {
+      x: origin.x + dir.x * bestT,
+      y: origin.y + dir.y * bestT,
+      z: origin.z + dir.z * bestT,
+    };
+    if (victim) {
+      const dmg = headshot ? weapon.damage * HEADSHOT_MULTIPLIER : weapon.damage;
+      this.applyDamage(shooter, victim, dmg, point, headshot);
+    } else if (victimTurret) {
+      this.damageTurret(shooter, victimTurret, weapon.damage, point);
+    }
   }
 
-  /** Apply damage from a shooter, emitting hit + (on death) kill. Honours invuln. */
+  /** Apply damage from a player shooter (thin wrapper over damagePlayer). */
   private applyDamage(
     shooter: ServerPlayer,
     victim: ServerPlayer,
     amount: number,
     point: Vec3,
+    headshot = false,
+  ): void {
+    this.damagePlayer(
+      { id: shooter.id, name: shooter.name, team: shooter.team, player: shooter },
+      victim,
+      amount,
+      point,
+      headshot,
+    );
+  }
+
+  /** Apply damage to a player from any attacker (player or turret). Honours invuln. */
+  private damagePlayer(
+    attacker: Attacker,
+    victim: ServerPlayer,
+    amount: number,
+    point: Vec3,
+    headshot: boolean,
   ): void {
     if (!victim.alive || Date.now() < victim.invulnUntil) return;
     victim.health -= amount;
     const killed = victim.health <= 0;
     const payload = {
-      shooterId: shooter.id,
+      shooterId: attacker.id,
       victimId: victim.id,
       damage: amount,
       victimHealth: Math.max(0, victim.health),
       killed,
+      headshot,
       point,
     };
-    this.io.to(shooter.id).emit('game:hit', payload);
+    if (attacker.player) this.io.to(attacker.player.id).emit('game:hit', payload);
     this.io.to(victim.id).emit('game:hit', payload);
-    if (killed) this.killPlayer(shooter, victim);
+    if (killed) this.killPlayer(attacker, victim);
   }
 
-  /** Detonate a projectile: explosion VFX + direct/splash damage. */
-  private detonate(p: ServerProjectile, point: Vec3, directVictim: ServerPlayer | null): void {
+  /** Damage an enemy turret; destroy it (explosion + kill feed) at 0 health. */
+  private damageTurret(
+    shooter: ServerPlayer,
+    turret: ServerTurret,
+    amount: number,
+    point: Vec3,
+  ): void {
+    if (!turret.alive) return;
+    turret.health -= amount;
+    this.io.to(shooter.id).emit('game:hit', {
+      shooterId: shooter.id,
+      victimId: `turret:${turret.id}`,
+      damage: amount,
+      victimHealth: Math.max(0, turret.health),
+      killed: turret.health <= 0,
+      headshot: false,
+      point,
+    });
+    if (turret.health > 0) return;
+    turret.health = 0;
+    turret.alive = false;
+    turret.firing = false;
+    turret.targetId = null;
+    turret.respawnTimer = this.turretCfg.respawnSec;
+    this.io.to(this.code).emit('game:explosion', {
+      id: -turret.id, // negative id ⇒ turret blast (distinct from projectile ids)
+      x: turret.pos.x,
+      y: turret.pos.y + this.turretCfg.colliderSize.y * 0.5,
+      z: turret.pos.z,
+      radius: 2.4,
+    });
+    this.io.to(this.code).emit('game:kill', {
+      killerId: shooter.id,
+      killerName: shooter.name,
+      killerTeam: shooter.team,
+      victimId: `turret:${turret.id}`,
+      victimName: 'Turret',
+      victimTeam: turret.team,
+      weaponId: shooter.weaponId,
+    });
+  }
+
+  /** Detonate a projectile: explosion VFX + direct/splash damage (players + turrets). */
+  private detonate(
+    p: ServerProjectile,
+    point: Vec3,
+    directVictim: ServerPlayer | null,
+    directTurret: ServerTurret | null,
+  ): void {
     this.io.to(this.code).emit('game:explosion', {
       id: p.id,
       x: point.x,
@@ -420,8 +565,21 @@ export class GameInstance {
           this.applyDamage(owner, other, dmg, point);
         }
       }
+      for (const tr of this.turrets) {
+        if (!tr.alive || tr.team === p.team) continue;
+        const cx = tr.pos.x;
+        const cy = tr.pos.y + this.turretCfg.colliderSize.y / 2;
+        const cz = tr.pos.z;
+        const dist = Math.hypot(cx - point.x, cy - point.y, cz - point.z);
+        if (dist <= p.splashRadius) {
+          const dmg = Math.max(1, Math.round(p.damage * (1 - dist / p.splashRadius)));
+          this.damageTurret(owner, tr, dmg, point);
+        }
+      }
     } else if (directVictim) {
       this.applyDamage(owner, directVictim, p.damage, point);
+    } else if (directTurret) {
+      this.damageTurret(owner, directTurret, p.damage, point);
     }
   }
 
@@ -433,6 +591,7 @@ export class GameInstance {
       const step = p.speed * dt;
       let hitT = step;
       let directVictim: ServerPlayer | null = null;
+      let directTurret: ServerTurret | null = null;
 
       for (const other of this.players.values()) {
         if (other.id === p.ownerId || !other.alive) continue;
@@ -441,12 +600,22 @@ export class GameInstance {
         if (t !== null && t >= 0 && t < hitT) {
           hitT = t;
           directVictim = other;
+          directTurret = null;
         }
+      }
+      // Turret bases block projectiles; only alive enemy turrets take the direct hit.
+      for (const tr of this.turrets) {
+        const t = rayAABB(p.pos, p.dir, tr.collider);
+        if (t === null || t < 0 || t >= hitT) continue;
+        hitT = t;
+        directVictim = null;
+        directTurret = tr.alive && tr.team !== p.team ? tr : null;
       }
       const worldT = this.worldRayDistance(p.pos, p.dir, hitT);
       if (worldT < hitT) {
         hitT = worldT;
         directVictim = null;
+        directTurret = null;
       }
       if (p.dir.y < 0) {
         const tGround = (this.groundY - p.pos.y) / p.dir.y;
@@ -464,7 +633,7 @@ export class GameInstance {
       };
       const lifetime = p.traveled / p.speed;
       if (collided || p.traveled + step >= p.range || lifetime > PROJECTILE_MAX_LIFETIME) {
-        this.detonate(p, point, directVictim);
+        this.detonate(p, point, directVictim, directTurret);
         continue;
       }
       p.pos = {
@@ -479,12 +648,12 @@ export class GameInstance {
     this.projectiles.push(...remaining);
   }
 
-  private killPlayer(killer: ServerPlayer, victim: ServerPlayer): void {
+  private killPlayer(killer: Attacker, victim: ServerPlayer): void {
     victim.alive = false;
     victim.health = 0;
     victim.deaths += 1;
     victim.respawnTimer = this.settings.respawnDelaySec;
-    killer.kills += 1;
+    if (killer.player) killer.player.kills += 1;
     this.scores[killer.team] += 1;
 
     this.io.to(this.code).emit('game:kill', {
@@ -494,7 +663,7 @@ export class GameInstance {
       victimId: victim.id,
       victimName: victim.name,
       victimTeam: victim.team,
-      weaponId: killer.weaponId,
+      weaponId: killer.player?.weaponId ?? null,
     });
 
     if (this.scores[killer.team] >= this.settings.scoreLimit) this.end();
@@ -506,12 +675,15 @@ export class GameInstance {
     if (this.ended) return;
     const now = Date.now();
 
+    // Static colliders + live turret boxes, so players collide with turrets too.
+    const world = this.movementWorld();
+
     for (const p of this.players.values()) {
       if (p.alive) {
         let budget = PER_TICK_DT_BUDGET;
         while (p.inputQueue.length > 0 && budget > 0) {
           const input = p.inputQueue.shift()!;
-          p.move = stepMovement(p.move, input, p.profile, this.collisionWorld);
+          p.move = stepMovement(p.move, input, p.profile, world);
           p.lastProcessedInput = input.seq;
           budget -= clamp(input.dt, 0, 0.1);
         }
@@ -531,20 +703,176 @@ export class GameInstance {
     // Advance any travelling projectiles (rockets etc.).
     this.updateProjectiles(TICK_DURATION);
 
+    // Team turrets: acquire targets, rotate, fire, rebuild.
+    this.updateTurrets(now);
+
     this.tick += 1;
 
     if (this.timeRemaining() <= 0) this.end();
   }
 
+  /**
+   * Collision world for movement: static geometry + every turret base. Turret
+   * bases stay solid whether alive or destroyed, so this is fixed for the match
+   * and matches the client's collider set exactly (no prediction rubber-banding).
+   */
+  private movementWorld(): CollisionWorld {
+    if (this.simWorld) return this.simWorld;
+    this.simWorld =
+      this.turrets.length > 0
+        ? {
+            ...this.collisionWorld,
+            colliders: [...this.worldColliders, ...this.turrets.map((t) => t.collider)],
+          }
+        : this.collisionWorld;
+    return this.simWorld;
+  }
+
+  // ---- turrets ----
+
+  private updateTurrets(now: number): void {
+    if (this.turrets.length === 0) return;
+    const cfg = this.turretCfg;
+    const fireIntervalMs = 60000 / cfg.fireRate;
+    const maxTurn = cfg.rotateSpeed * TICK_DURATION;
+
+    for (const tr of this.turrets) {
+      tr.firing = false;
+      if (!tr.alive) {
+        if (cfg.respawnSec > 0) {
+          tr.respawnTimer -= TICK_DURATION;
+          if (tr.respawnTimer <= 0) {
+            tr.alive = true;
+            tr.health = tr.maxHealth;
+            tr.yaw = tr.baseYaw;
+            tr.targetId = null;
+          }
+        }
+        continue;
+      }
+
+      const eye: Vec3 = { x: tr.pos.x, y: tr.muzzleY, z: tr.pos.z };
+      let target = tr.targetId ? (this.players.get(tr.targetId) ?? null) : null;
+      if (!this.turretCanSee(tr, target, eye, cfg.range)) {
+        target = this.acquireTurretTarget(tr, eye, cfg.range);
+      }
+      tr.targetId = target?.id ?? null;
+      if (!target) continue;
+
+      const aim: Vec3 = {
+        x: target.move.position.x,
+        y: target.move.position.y + PLAYER_HEIGHT * 0.6,
+        z: target.move.position.z,
+      };
+      // Game yaw convention: forward = (-sin(yaw), -cos(yaw)).
+      const desiredYaw = Math.atan2(-(aim.x - eye.x), -(aim.z - eye.z));
+      tr.yaw = rotateToward(tr.yaw, desiredYaw, maxTurn);
+
+      if (Math.abs(angleDelta(tr.yaw, desiredYaw)) <= cfg.aimTolerance && now >= tr.nextFireAt) {
+        tr.nextFireAt = now + fireIntervalMs;
+        tr.firing = true;
+        this.turretShoot(tr, eye, target, aim, cfg.range, cfg.damage);
+      }
+    }
+  }
+
+  /** Can this turret currently engage `target` (alive enemy, in range, line of sight)? */
+  private turretCanSee(
+    tr: ServerTurret,
+    target: ServerPlayer | null,
+    eye: Vec3,
+    range: number,
+  ): target is ServerPlayer {
+    if (!target || !target.alive || target.team === tr.team) return false;
+    const aim: Vec3 = {
+      x: target.move.position.x,
+      y: target.move.position.y + PLAYER_HEIGHT * 0.6,
+      z: target.move.position.z,
+    };
+    const dx = aim.x - eye.x;
+    const dy = aim.y - eye.y;
+    const dz = aim.z - eye.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist > range || dist < 1e-3) return false;
+    const dir: Vec3 = { x: dx / dist, y: dy / dist, z: dz / dist };
+    return this.worldRayDistance(eye, dir, dist) >= dist - 0.2;
+  }
+
+  private acquireTurretTarget(tr: ServerTurret, eye: Vec3, range: number): ServerPlayer | null {
+    let best: ServerPlayer | null = null;
+    let bestDist = Infinity;
+    for (const p of this.players.values()) {
+      if (!this.turretCanSee(tr, p, eye, range)) continue;
+      const d = Math.hypot(p.move.position.x - eye.x, p.move.position.z - eye.z);
+      if (d < bestDist) {
+        bestDist = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
+  private turretShoot(
+    tr: ServerTurret,
+    eye: Vec3,
+    target: ServerPlayer,
+    aim: Vec3,
+    range: number,
+    damage: number,
+  ): void {
+    const dx = aim.x - eye.x;
+    const dy = aim.y - eye.y;
+    const dz = aim.z - eye.z;
+    const dist = Math.hypot(dx, dy, dz) || 1;
+    const dir: Vec3 = { x: dx / dist, y: dy / dist, z: dz / dist };
+
+    const worldT = this.worldRayDistance(eye, dir, range);
+    const hit = raycastPlayer(eye, dir, target.move.position, Math.min(range, worldT));
+    const endT = hit ? hit.t : Math.min(range, worldT);
+    const to: Vec3 = { x: eye.x + dir.x * endT, y: eye.y + dir.y * endT, z: eye.z + dir.z * endT };
+
+    this.io.to(this.code).emit('game:turretFire', { id: tr.id, from: eye, to });
+
+    if (hit) {
+      const dmg = hit.headshot ? damage * HEADSHOT_MULTIPLIER : damage;
+      this.damagePlayer(
+        { id: `turret:${tr.id}`, name: 'Turret', team: tr.team, player: null },
+        target,
+        dmg,
+        to,
+        hit.headshot,
+      );
+    }
+  }
+
   /** Interpolated player positions at a past server time (for lag comp). */
   private positionsAt(time: number): Map<string, Vec3> {
-    if (this.history.length === 0) return new Map();
-    let frame = this.history[0]!;
-    for (const f of this.history) {
-      if (f.time <= time) frame = f;
-      else break;
+    const h = this.history;
+    if (h.length === 0) return new Map();
+    if (time <= h[0]!.time) return h[0]!.positions;
+    if (time >= h[h.length - 1]!.time) return h[h.length - 1]!.positions;
+
+    let a = h[0]!;
+    let b = h[h.length - 1]!;
+    for (let i = 0; i < h.length - 1; i++) {
+      if (h[i]!.time <= time && h[i + 1]!.time >= time) {
+        a = h[i]!;
+        b = h[i + 1]!;
+        break;
+      }
     }
-    return frame.positions;
+    const span = b.time - a.time;
+    const f = span > 0 ? (time - a.time) / span : 0;
+    const out = new Map<string, Vec3>();
+    for (const [id, pa] of a.positions) {
+      const pb = b.positions.get(id) ?? pa;
+      out.set(id, {
+        x: pa.x + (pb.x - pa.x) * f,
+        y: pa.y + (pb.y - pa.y) * f,
+        z: pa.z + (pb.z - pa.z) * f,
+      });
+    }
+    return out;
   }
 
   private spawn(player: ServerPlayer): void {
@@ -596,6 +924,22 @@ export class GameInstance {
     };
   }
 
+  private turretsNet(): TurretState[] {
+    return this.turrets.map((t) => ({
+      id: t.id,
+      x: t.pos.x,
+      y: t.pos.y,
+      z: t.pos.z,
+      yaw: t.yaw,
+      team: t.team,
+      health: Math.max(0, t.health),
+      maxHealth: t.maxHealth,
+      alive: t.alive,
+      firing: t.firing,
+      respawnIn: t.alive ? 0 : Math.max(0, t.respawnTimer),
+    }));
+  }
+
   /** Compact rounded signature used to detect whether a player changed. */
   private signature(s: NetPlayerState): string {
     const r = (n: number) => Math.round(n * 100) / 100;
@@ -619,6 +963,7 @@ export class GameInstance {
 
     const removed = this.removedSinceBroadcast;
     const timeRemaining = this.timeRemaining();
+    const turrets = this.turretsNet();
 
     for (const p of this.players.values()) {
       const full = this.needsFull.has(p.id);
@@ -631,6 +976,7 @@ export class GameInstance {
         removed,
         scores: { ...this.scores },
         timeRemaining,
+        turrets,
       });
       if (full) this.needsFull.delete(p.id);
     }
@@ -668,4 +1014,19 @@ const normalize = (v: Vec3): Vec3 => {
   const len = Math.hypot(v.x, v.y, v.z);
   if (len < 1e-8) return { x: 0, y: 0, z: 0 };
   return { x: v.x / len, y: v.y / len, z: v.z / len };
+};
+
+/** Shortest signed angular difference target - current, wrapped to [-PI, PI]. */
+const angleDelta = (current: number, target: number): number => {
+  let d = (target - current) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
+};
+
+/** Rotate `current` toward `target` by at most `maxStep` radians. */
+const rotateToward = (current: number, target: number, maxStep: number): number => {
+  const d = angleDelta(current, target);
+  if (Math.abs(d) <= maxStep) return target;
+  return current + Math.sign(d) * maxStep;
 };

@@ -116,6 +116,11 @@ async function processMap(id, folder, props = {}) {
   console.log(`[map] ${id}: reading map.glb`);
   const doc = await io.read(glbPath);
 
+  // Per-map config (read once). `cellSize` lets a map opt into finer collision
+  // voxels (default 1.0); `turretsPerTeam` controls how many turrets we place.
+  const cfg = existsSync(join(folder, 'config.json')) ? readJson(join(folder, 'config.json')) : {};
+  const cell = Number.isFinite(cfg.cellSize) && cfg.cellSize > 0 ? cfg.cellSize : CELL_SIZE;
+
   // 1) Clean + compress + normalize SIZE — only the first time a map is processed
   //    (no colliders.json yet). Re-runs to retune collision/spawns stay fast.
   const collidersPath = join(folder, 'colliders.json');
@@ -219,18 +224,18 @@ async function processMap(id, folder, props = {}) {
   const origin = [min[0], groundY, min[2]];
   const playH = Math.min(PLAY_HEIGHT_CAP, max[1] - groundY);
   const analysisH = Math.min(SPAWN_ANALYSIS_CAP, max[1] - groundY);
-  const nx = Math.max(1, Math.ceil((max[0] - min[0]) / CELL_SIZE));
-  const ny = Math.max(1, Math.ceil(playH / CELL_SIZE)); // stored height
-  const nyA = Math.max(ny, Math.ceil(analysisH / CELL_SIZE)); // analysis height
-  const nz = Math.max(1, Math.ceil((max[2] - min[2]) / CELL_SIZE));
+  const nx = Math.max(1, Math.ceil((max[0] - min[0]) / cell));
+  const ny = Math.max(1, Math.ceil(playH / cell)); // stored height
+  const nyA = Math.max(ny, Math.ceil(analysisH / cell)); // analysis height
+  const nz = Math.max(1, Math.ceil((max[2] - min[2]) / cell));
   const solidA = new Uint8Array(nx * nyA * nz); // tall, build-time analysis grid
-  const yTopA = groundY + nyA * CELL_SIZE;
+  const yTopA = groundY + nyA * cell;
 
   const markPoint = (x, y, z) => {
     if (y < groundY || y > yTopA) return;
-    const ix = Math.floor((x - origin[0]) / CELL_SIZE);
-    const iy = Math.floor((y - origin[1]) / CELL_SIZE);
-    const iz = Math.floor((z - origin[2]) / CELL_SIZE);
+    const ix = Math.floor((x - origin[0]) / cell);
+    const iy = Math.floor((y - origin[1]) / cell);
+    const iz = Math.floor((z - origin[2]) / cell);
     if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= nyA || iz >= nz) return;
     solidA[(iy * nz + iz) * nx + ix] = 1;
   };
@@ -243,7 +248,7 @@ async function processMap(id, folder, props = {}) {
     const e2 = Math.hypot(c[0] - a[0], c[1] - a[1], c[2] - a[2]);
     const n = Math.min(
       MAX_TRI_SAMPLES,
-      Math.max(1, Math.ceil(Math.max(e1, e2) / (CELL_SIZE * 0.5))),
+      Math.max(1, Math.ceil(Math.max(e1, e2) / (cell * 0.5))),
     );
     for (let u = 0; u <= n; u++) {
       for (let v = 0; v <= n - u; v++) {
@@ -305,9 +310,9 @@ async function processMap(id, folder, props = {}) {
         iz,
         h: info.h,
         openToSky: info.openToSky,
-        y: origin[1] + (info.floorIy + 1) * CELL_SIZE,
-        x: origin[0] + (ix + 0.5) * CELL_SIZE,
-        z: origin[2] + (iz + 0.5) * CELL_SIZE,
+        y: origin[1] + (info.floorIy + 1) * cell,
+        x: origin[0] + (ix + 0.5) * cell,
+        z: origin[2] + (iz + 0.5) * cell,
       });
     }
   }
@@ -359,7 +364,6 @@ async function processMap(id, folder, props = {}) {
   // 5) Props (cover): place the map config's props in the CENTRAL play area
   //    around the spawn midpoint (not flung to the map edges), on the exact
   //    spawn floor, each with a collider box so players can hide behind them.
-  const cfg = existsSync(join(folder, 'config.json')) ? readJson(join(folder, 'config.json')) : {};
   const spawnPts = [...spawns.red, ...spawns.blue].map((s) => s.position);
   // Players' feet rest on this surface; sit the cars on the same level.
   const spawnSurfaceY = spawns.red[0]?.position.y ?? groundY + 0.1;
@@ -441,8 +445,56 @@ async function processMap(id, folder, props = {}) {
     }
   }
 
+  // 6) Turrets (team defenders): place `turretsPerTeam` per side on open floor
+  //    near each team's spawn cluster, spread out and facing the enemy side.
+  const turretsPerTeam = Number.isFinite(cfg.turretsPerTeam) ? cfg.turretsPerTeam : 5;
+  const turrets = [];
+  // Floor columns turrets may stand on: with headroom, on the spawn floor. Unlike
+  // props, turrets are base defenders so they MAY sit near spawns. Prefer open-sky
+  // columns, but fall back so enclosed/indoor maps still get turrets.
+  let turretFloor = all.filter(
+    (p) => p.openToSky && p.h >= 2 && Math.abs(p.y - spawnFloorY) < 1.5,
+  );
+  if (turretFloor.length === 0) {
+    turretFloor = all.filter((p) => p.h >= 2 && Math.abs(p.y - spawnFloorY) < 1.5);
+  }
+  if (turretFloor.length === 0) turretFloor = all.filter((p) => p.h >= 2);
+  const placeTurrets = (team, teamSpawns, yaw) => {
+    if (turretsPerTeam <= 0 || teamSpawns.length === 0 || turretFloor.length === 0) return;
+    const cx = teamSpawns.reduce((a, s) => a + s.position.x, 0) / teamSpawns.length;
+    const cz = teamSpawns.reduce((a, s) => a + s.position.z, 0) / teamSpawns.length;
+    // Prefer a ring around this base; fall back to any open floor if scarce.
+    let cand = turretFloor.filter((p) => {
+      const r = Math.hypot(p.x - cx, p.z - cz);
+      return r >= 3 && r <= 32 && spawnPts.every((s) => Math.hypot(s.x - p.x, s.z - p.z) > 2);
+    });
+    if (cand.length < turretsPerTeam) cand = turretFloor;
+    // Minimum spacing shrinks if candidates are scarce (small maps still fill).
+    const minSep = cand.length > turretsPerTeam * 6 ? 5 : 2.5;
+    const chosen = [];
+    for (let i = 0; i < turretsPerTeam; i++) {
+      let pick = null;
+      let best = -Infinity;
+      for (const c of cand) {
+        const sep = chosen.length
+          ? Math.min(...chosen.map((q) => Math.hypot(q.x - c.x, q.z - c.z)))
+          : 999;
+        if (chosen.length && sep < minSep) continue;
+        // Spread turrets out, biased toward the contested middle (forward of base).
+        const towardMid = -Math.hypot(c.x - midX, c.z - midZ) * 0.15;
+        const score = sep + towardMid;
+        if (score > best) [best, pick] = [score, c];
+      }
+      if (!pick) break;
+      chosen.push(pick);
+      turrets.push({ x: pick.x, y: spawnFloorY, z: pick.z, yaw, team });
+    }
+  };
+  placeTurrets('red', spawns.red, -Math.PI / 2);
+  placeTurrets('blue', spawns.blue, Math.PI / 2);
+
   const out = {
-    cellSize: CELL_SIZE,
+    cellSize: cell,
     origin: { x: origin[0], y: origin[1], z: origin[2] },
     dims: [nx, ny, nz],
     groundY,
@@ -451,11 +503,13 @@ async function processMap(id, folder, props = {}) {
     spawns,
     colliders: propColliders,
     props: propInstances,
+    turrets,
   };
   writeFileSync(join(folder, 'colliders.json'), JSON.stringify(out));
   console.log(
     `[map] ${id}: grid ${nx}x${ny}x${nz} (${solidCount} solid cells), ${propInstances.length} props, ` +
-      `${triangles.length / 3} tris, bounds ${(max[0] - min[0]).toFixed(0)}x${(max[2] - min[2]).toFixed(0)}`,
+      `${turrets.length} turrets, ${triangles.length / 3} tris, ` +
+      `bounds ${(max[0] - min[0]).toFixed(0)}x${(max[2] - min[2]).toFixed(0)}`,
   );
 }
 

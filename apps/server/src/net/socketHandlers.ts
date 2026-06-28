@@ -17,6 +17,7 @@ import { LobbyManager } from '../lobby/LobbyManager';
 import type { Lobby } from '../lobby/Lobby';
 import { GameInstance } from '../game/GameInstance';
 import { weaponRegistry } from '../game/WeaponRegistry';
+import { turretRegistry } from '../game/TurretRegistry';
 import { loadMapColliders } from '../game/MapLoader';
 import { listCharacterIds } from '../game/CharacterRegistry';
 import { logger } from '../logger';
@@ -206,8 +207,10 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
       lobby.phase = 'in-game';
       const code = lobby.code;
 
-      // Read authoritative weapon stats + map collision fresh.
+      // Read authoritative weapon/turret stats + map collision fresh.
       const weapons = weaponRegistry.scan();
+      turretRegistry.scan();
+      const turretConfig = turretRegistry.default();
       const mapData = loadMapColliders(lobby.settings.mapId);
 
       // Ensure every player has a character + weapon so an avatar/gun always
@@ -237,6 +240,7 @@ export function attachSocketHandlers(io: GameServer): LobbyManager {
         payload.players,
         weapons,
         mapData,
+        turretConfig,
         () => {
           games.delete(code);
           const lob = manager.get(code);

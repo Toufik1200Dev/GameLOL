@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MAX_HEARTS,
   EYE_HEIGHT,
+  HEADSHOT_MULTIPLIER,
   createDefaultLobbySettings,
+  turretConfigSchema,
   weaponConfigSchema,
   type PlayerPublic,
   type WeaponConfig,
 } from '@game/shared';
 import { GameInstance, type ServerPlayer } from './GameInstance';
+
+const TURRET_CFG = turretConfigSchema.parse({ name: 'Turret' });
 
 type GameServerArg = ConstructorParameters<typeof GameInstance>[0];
 
@@ -74,6 +78,7 @@ function setup(weapons = new Map<string, WeaponConfig>()) {
     roster(),
     weapons,
     null,
+    TURRET_CFG,
     () => {},
   );
   const internals = game as unknown as Internals;
@@ -89,6 +94,8 @@ function setup(weapons = new Map<string, WeaponConfig>()) {
   return { game, sink, a, b, internals };
 }
 
+// A level shot from one player's eyes into an equal-height target lands in the
+// head box (a headshot).
 const fireStraight = (game: GameInstance, shooter: ServerPlayer) => {
   shooter.lastFireTime = 0; // bypass rate limit between scripted shots
   game.handleShoot(shooter.id, {
@@ -99,12 +106,33 @@ const fireStraight = (game: GameInstance, shooter: ServerPlayer) => {
   });
 };
 
+// Aim downward into the torso (B's chest at z=-5) for a non-headshot body hit.
+const fireBody = (game: GameInstance, shooter: ServerPlayer) => {
+  shooter.lastFireTime = 0;
+  game.handleShoot(shooter.id, {
+    seq: 1,
+    origin: { x: 0, y: EYE_HEIGHT, z: 0 },
+    dir: { x: 0, y: -0.65, z: -5 },
+    clientTime: Date.now(),
+  });
+};
+
 describe('GameInstance combat', () => {
-  it('lands a hit and decrements the victim health', () => {
+  it('lands a body hit and decrements the victim health by the base damage', () => {
+    const { game, sink, a, b } = setup();
+    fireBody(game, a);
+    expect(b.health).toBe(DEFAULT_MAX_HEARTS - 1);
+    const hit = sink.find((e) => e.event === 'game:hit');
+    expect(hit).toBeDefined();
+    expect((hit!.payload as { headshot: boolean }).headshot).toBe(false);
+  });
+
+  it('applies the headshot multiplier on a head hit', () => {
     const { game, sink, a, b } = setup();
     fireStraight(game, a);
-    expect(b.health).toBe(DEFAULT_MAX_HEARTS - 1);
-    expect(sink.some((e) => e.event === 'game:hit')).toBe(true);
+    expect(b.health).toBe(DEFAULT_MAX_HEARTS - HEADSHOT_MULTIPLIER);
+    const hit = sink.find((e) => e.event === 'game:hit');
+    expect((hit!.payload as { headshot: boolean }).headshot).toBe(true);
   });
 
   it('does not damage a friendly when friendly fire is off', () => {

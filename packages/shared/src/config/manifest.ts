@@ -3,7 +3,7 @@
  * pairs a discovered asset folder with its validated config and resolved public
  * URLs.
  */
-import type { CharacterConfig, MapConfig, WeaponConfig } from './schemas';
+import type { CharacterConfig, MapConfig, TurretConfig, WeaponConfig } from './schemas';
 
 export interface CharacterManifestEntry {
   id: string;
@@ -34,11 +34,20 @@ export interface MapManifestEntry {
   config: MapConfig;
 }
 
+export interface TurretManifestEntry {
+  id: string;
+  path: string;
+  icon: string | null;
+  model: string;
+  config: TurretConfig;
+}
+
 export interface AssetManifest {
   generatedAt: string;
   characters: CharacterManifestEntry[];
   weapons: WeaponManifestEntry[];
   maps: MapManifestEntry[];
+  turrets: TurretManifestEntry[];
 }
 
 export const EMPTY_MANIFEST: AssetManifest = {
@@ -46,4 +55,5 @@ export const EMPTY_MANIFEST: AssetManifest = {
   characters: [],
   weapons: [],
   maps: [],
+  turrets: [],
 };

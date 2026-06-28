@@ -1,0 +1,11 @@
+{
+  "name": "Gromp",
+  "description": "Hulking jungle toad — tanky and slow.",
+  "health": 14,
+  "speed": 4.6,
+  "sprintMultiplier": 1.4,
+  "jumpHeight": 1.2,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 0
+}

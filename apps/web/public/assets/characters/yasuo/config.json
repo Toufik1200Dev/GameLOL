@@ -1,0 +1,11 @@
+{
+  "name": "Yasuo",
+  "description": "The Unforgiven — swift, aggressive swordsman.",
+  "health": 10,
+  "speed": 5.8,
+  "sprintMultiplier": 1.7,
+  "jumpHeight": 1.5,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 3.14159
+}

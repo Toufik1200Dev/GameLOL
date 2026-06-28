@@ -6,7 +6,14 @@
  */
 import { create } from 'zustand';
 
-export type Screen = 'menu' | 'settings' | 'lobby' | 'characterSelect' | 'weaponSelect' | 'game';
+export type Screen =
+  | 'menu'
+  | 'settings'
+  | 'lobby'
+  | 'characterSelect'
+  | 'weaponSelect'
+  | 'mapSelect'
+  | 'game';
 
 export type ToastType = 'info' | 'success' | 'error';
 

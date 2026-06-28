@@ -126,3 +126,11 @@ export function WeaponPreview({ url, scale }: { url: string; scale?: number }) {
     </PreviewCanvas>
   );
 }
+
+export function MapPreview({ url, scale }: { url: string; scale?: number }) {
+  return (
+    <PreviewCanvas>
+      <StaticModel url={url} scale={scale} />
+    </PreviewCanvas>
+  );
+}

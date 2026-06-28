@@ -211,6 +211,7 @@ export class NetGameClient {
       scores: snap.scores,
       timeRemaining: snap.timeRemaining,
       roster: [...this.netPlayers.values()],
+      turrets: snap.turrets ?? [],
     };
     if (self) {
       patch.hearts = self.health;

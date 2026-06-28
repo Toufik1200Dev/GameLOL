@@ -1,0 +1,11 @@
+{
+  "name": "Galaxy Slayer Zed",
+  "description": "Master of shadows — fast, lethal assassin.",
+  "health": 9,
+  "speed": 6.0,
+  "sprintMultiplier": 1.75,
+  "jumpHeight": 1.55,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 3.14159
+}

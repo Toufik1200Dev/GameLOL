@@ -38,6 +38,7 @@ interface LobbyStore {
   selectTeam: (team: TeamId) => void;
   selectCharacter: (characterId: string | null) => void;
   selectWeapon: (weaponId: string | null) => void;
+  selectMap: (mapId: string) => void;
   updateSettings: (patch: Partial<LobbySettings>) => void;
   kick: (playerId: string) => void;
   closeLobby: () => void;
@@ -109,6 +110,8 @@ export const useLobbyStore = create<LobbyStore>((set, get) => ({
   selectTeam: (team) => getSocket().emit('lobby:selectTeam', { team }),
   selectCharacter: (characterId) => getSocket().emit('lobby:selectCharacter', { characterId }),
   selectWeapon: (weaponId) => getSocket().emit('lobby:selectWeapon', { weaponId }),
+  // Host-only on the server (lobby:updateSettings asserts host); the UI also gates it.
+  selectMap: (mapId) => getSocket().emit('lobby:updateSettings', { settings: { mapId } }),
   updateSettings: (patch) => getSocket().emit('lobby:updateSettings', { settings: patch }),
   kick: (playerId) => getSocket().emit('lobby:kick', { playerId }),
   closeLobby: () => {

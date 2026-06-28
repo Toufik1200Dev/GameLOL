@@ -1,0 +1,11 @@
+{
+  "name": "Yone",
+  "description": "The Unforgotten — twin-blade spirit hunter.",
+  "health": 11,
+  "speed": 5.7,
+  "sprintMultiplier": 1.65,
+  "jumpHeight": 1.5,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 3.14159
+}

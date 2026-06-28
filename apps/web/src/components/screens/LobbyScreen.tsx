@@ -20,7 +20,8 @@ function useAssetNames() {
   return useMemo(() => {
     const characters = new Map(manifest.characters.map((c) => [c.id, c.config.name]));
     const weapons = new Map(manifest.weapons.map((w) => [w.id, w.config.name]));
-    return { characters, weapons };
+    const maps = new Map(manifest.maps.map((m) => [m.id, m.config.name]));
+    return { characters, weapons, maps };
   }, [manifest]);
 }
 
@@ -277,6 +278,12 @@ export function LobbyScreen() {
                 Weapon:{' '}
                 <span className="text-accent ml-1">
                   {self.weaponId ? (names.weapons.get(self.weaponId) ?? '—') : 'Choose'}
+                </span>
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setScreen('mapSelect')}>
+                Map:{' '}
+                <span className="text-accent ml-1">
+                  {names.maps.get(lobby.settings.mapId) ?? lobby.settings.mapId}
                 </span>
               </Button>
             </div>

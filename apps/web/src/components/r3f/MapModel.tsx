@@ -14,17 +14,22 @@ export function MapModel({
   url,
   offsetY = 0,
   groundY,
+  scale = 1,
 }: {
   url: string;
   offsetY?: number;
   groundY: number;
+  /** Uniform map scale (matches the scaled collision); applied about the origin. */
+  scale?: number;
 }) {
   const { scene } = useGLTF(url);
 
   const renderOffsetY = useMemo(() => {
     const bounds = new Box3().setFromObject(scene);
-    return offsetY + (groundY - bounds.min.y);
-  }, [scene, offsetY, groundY]);
+    // groundY/offsetY are already in scaled world units; align the SCALED mesh
+    // floor (min.y * scale) to the authoritative collision ground.
+    return offsetY + (groundY - bounds.min.y * scale);
+  }, [scene, offsetY, groundY, scale]);
 
   useEffect(() => {
     scene.traverse((o) => {
@@ -37,7 +42,7 @@ export function MapModel({
   }, [scene]);
 
   // Visual-only vertical offset (collision uses the unshifted GLB plus optional
-  // config tuning). The scene is raised so its minimum Y aligns with the
-  // authoritative collision groundY.
-  return <primitive object={scene} position={[0, renderOffsetY, 0]} />;
+  // config tuning). The scene is scaled and raised so its minimum Y aligns with
+  // the authoritative collision groundY.
+  return <primitive object={scene} scale={scale} position={[0, renderOffsetY, 0]} />;
 }

@@ -20,6 +20,16 @@ export interface PropInstance {
   rotationY: number;
 }
 
+/** A static turret placement (team-owned) baked into the map at build time. */
+export interface TurretSpawn {
+  x: number;
+  y: number;
+  z: number;
+  /** Resting facing (radians) — toward the enemy side. */
+  yaw: number;
+  team: TeamId;
+}
+
 /** Raw shape of a map's `colliders.json`. */
 export interface MapColliderData {
   cellSize: number;
@@ -34,6 +44,8 @@ export interface MapColliderData {
   colliders?: AABB[];
   /** Renderable cover props placed on the map. */
   props?: PropInstance[];
+  /** Team turret placements (server instantiates live entities from these). */
+  turrets?: TurretSpawn[];
 }
 
 export interface GridCollision {
@@ -70,6 +82,38 @@ export function base64ToBytes(b64: string): Uint8Array {
     }
   }
   return out;
+}
+
+/**
+ * Uniformly scale a map's collision data about the world origin. The voxel grid
+ * stays the same shape (same `dims`/`solid`) but each cell grows with `cellSize`,
+ * and every world position (origin, ground, bounds, colliders, props, turrets,
+ * spawns) is multiplied by `scale`. Applied IDENTICALLY on server + client so the
+ * deterministic sim is preserved while a map is fitted to character size.
+ */
+export function scaleMapColliderData(data: MapColliderData, scale: number): MapColliderData {
+  if (!(scale > 0) || Math.abs(scale - 1) < 1e-9) return data;
+  const s = scale;
+  const sv = (v: { x: number; y: number; z: number }) => ({ x: v.x * s, y: v.y * s, z: v.z * s });
+  const sBox = (b: AABB): AABB => ({ min: sv(b.min), max: sv(b.max) });
+  const sSpawns = {} as Record<TeamId, SpawnPoint[]>;
+  for (const team of Object.keys(data.spawns) as TeamId[]) {
+    sSpawns[team] = data.spawns[team].map((p) => ({ position: sv(p.position), yaw: p.yaw }));
+  }
+  return {
+    ...data,
+    cellSize: data.cellSize * s,
+    origin: sv(data.origin),
+    groundY: data.groundY * s,
+    bounds: {
+      min: { x: data.bounds.min.x * s, z: data.bounds.min.z * s },
+      max: { x: data.bounds.max.x * s, z: data.bounds.max.z * s },
+    },
+    spawns: sSpawns,
+    colliders: data.colliders?.map(sBox),
+    props: data.props?.map((p) => ({ ...p, x: p.x * s, y: p.y * s, z: p.z * s })),
+    turrets: data.turrets?.map((t) => ({ ...t, x: t.x * s, y: t.y * s, z: t.z * s })),
+  };
 }
 
 export function buildGridCollision(data: MapColliderData): GridCollision {

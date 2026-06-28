@@ -39,6 +39,7 @@ function Hearts() {
 
 function Crosshair() {
   const hitAt = useGameStore((s) => s.hitMarkerAt);
+  const headshotAt = useGameStore((s) => s.headshotAt);
   const [showHit, setShowHit] = useState(false);
   useEffect(() => {
     if (!hitAt) return;
@@ -46,6 +47,8 @@ function Crosshair() {
     const t = setTimeout(() => setShowHit(false), 150);
     return () => clearTimeout(t);
   }, [hitAt]);
+  // The hit was a headshot if its marker timestamp matches the latest hit.
+  const isHeadshot = showHit && headshotAt > 0 && Math.abs(headshotAt - hitAt) < 1;
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
       <div className="relative h-6 w-6">
@@ -54,7 +57,11 @@ function Crosshair() {
         <span className="absolute left-0 top-1/2 h-0.5 w-2 -translate-y-1/2 bg-white/80" />
         <span className="absolute right-0 top-1/2 h-0.5 w-2 -translate-y-1/2 bg-white/80" />
         {showHit && (
-          <span className="absolute inset-0 flex items-center justify-center text-lg font-bold text-red-400">
+          <span
+            className={`absolute inset-0 flex items-center justify-center text-lg font-bold ${
+              isHeadshot ? 'text-amber-300' : 'text-red-400'
+            }`}
+          >
             ✕
           </span>
         )}

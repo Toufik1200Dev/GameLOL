@@ -5,7 +5,12 @@
  * transient effect timestamps (hit marker / damage flash).
  */
 import { create } from 'zustand';
-import { DEFAULT_MAX_HEARTS, type NetPlayerState, type TeamId } from '@game/shared';
+import {
+  DEFAULT_MAX_HEARTS,
+  type NetPlayerState,
+  type TeamId,
+  type TurretState,
+} from '@game/shared';
 
 export interface KillFeedEntry {
   id: number;
@@ -36,9 +41,11 @@ interface GameStore {
   ping: number;
 
   roster: NetPlayerState[];
+  turrets: TurretState[];
   killFeed: KillFeedEntry[];
 
   hitMarkerAt: number;
+  headshotAt: number;
   damageAt: number;
 
   scoreboardOpen: boolean;
@@ -49,7 +56,7 @@ interface GameStore {
   setSelfId: (id: string) => void;
   setHud: (patch: Partial<GameStore>) => void;
   pushKill: (entry: Omit<KillFeedEntry, 'id'>) => void;
-  markHit: () => void;
+  markHit: (headshot?: boolean) => void;
   markDamage: () => void;
   setScoreboard: (open: boolean) => void;
   setPaused: (paused: boolean) => void;
@@ -76,8 +83,10 @@ const initial = {
   fps: 0,
   ping: 0,
   roster: [] as NetPlayerState[],
+  turrets: [] as TurretState[],
   killFeed: [] as KillFeedEntry[],
   hitMarkerAt: 0,
+  headshotAt: 0,
   damageAt: 0,
   scoreboardOpen: false,
   paused: false,
@@ -90,7 +99,8 @@ export const useGameStore = create<GameStore>((set) => ({
   setHud: (patch) => set(patch),
   pushKill: (entry) =>
     set((s) => ({ killFeed: [...s.killFeed.slice(-4), { id: ++killId, ...entry }] })),
-  markHit: () => set({ hitMarkerAt: performance.now() }),
+  markHit: (headshot = false) =>
+    set(headshot ? { hitMarkerAt: performance.now(), headshotAt: performance.now() } : { hitMarkerAt: performance.now() }),
   markDamage: () => set({ damageAt: performance.now() }),
   setScoreboard: (scoreboardOpen) => set({ scoreboardOpen }),
   setPaused: (paused) => set({ paused }),

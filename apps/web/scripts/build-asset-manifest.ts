@@ -16,10 +16,12 @@ import { fileURLToPath } from 'node:url';
 import {
   characterConfigSchema,
   mapConfigSchema,
+  turretConfigSchema,
   weaponConfigSchema,
   type AssetManifest,
   type CharacterManifestEntry,
   type MapManifestEntry,
+  type TurretManifestEntry,
   type WeaponManifestEntry,
 } from '@game/shared';
 
@@ -119,16 +121,41 @@ function scanMaps(): MapManifestEntry[] {
   return out;
 }
 
+function scanTurrets(): TurretManifestEntry[] {
+  const dir = join(ASSETS_DIR, 'turrets');
+  const out: TurretManifestEntry[] = [];
+  for (const id of listSubdirs(dir)) {
+    const folder = join(dir, id);
+    if (!has(folder, 'turret.glb')) continue;
+    const parsed = turretConfigSchema.safeParse(readConfig(folder));
+    if (!parsed.success) {
+      console.warn(`[assets] turrets/${id} invalid config:`, parsed.error?.message);
+      continue;
+    }
+    const base = `/assets/turrets/${id}`;
+    out.push({
+      id,
+      path: base,
+      icon: has(folder, 'icon.png') ? `${base}/icon.png` : null,
+      model: `${base}/turret.glb`,
+      config: parsed.data,
+    });
+  }
+  return out;
+}
+
 const manifest: AssetManifest = {
   generatedAt: new Date().toISOString(),
   characters: scanCharacters(),
   weapons: scanWeapons(),
   maps: scanMaps(),
+  turrets: scanTurrets(),
 };
 
 const outPath = join(ASSETS_DIR, 'manifest.json');
 writeFileSync(outPath, JSON.stringify(manifest, null, 2));
 console.log(
   `[assets] manifest.json written: ${manifest.characters.length} characters, ` +
-    `${manifest.weapons.length} weapons, ${manifest.maps.length} maps`,
+    `${manifest.weapons.length} weapons, ${manifest.maps.length} maps, ` +
+    `${manifest.turrets.length} turrets`,
 );

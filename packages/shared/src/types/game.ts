@@ -31,10 +31,29 @@ export interface NetPlayerState {
   respawnIn: number;
 }
 
+/** Authoritative per-turret state broadcast in snapshots. */
+export interface TurretState {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  /** Current (animated) facing in radians. */
+  yaw: number;
+  team: TeamId;
+  health: number;
+  maxHealth: number;
+  alive: boolean;
+  /** True on ticks the turret is actively firing (drives fire animation). */
+  firing: boolean;
+  /** Seconds until a destroyed turret rebuilds (0 when alive). */
+  respawnIn: number;
+}
+
 /**
  * A world snapshot. `players` is a DELTA — only entries that changed since the
  * recipient's last snapshot (a freshly joined client receives a full set first).
- * `lastProcessedInput` is per-recipient (used by client reconciliation).
+ * `lastProcessedInput` is per-recipient (used by client reconciliation). Turrets
+ * are few and static-positioned, so the full set is sent each snapshot.
  */
 export interface GameSnapshot {
   tick: number;
@@ -45,6 +64,7 @@ export interface GameSnapshot {
   removed: string[];
   scores: Record<TeamId, number>;
   timeRemaining: number;
+  turrets: TurretState[];
 }
 
 /** Fire request from the client (server validates + resolves authoritatively). */
@@ -62,7 +82,15 @@ export interface HitEvent {
   damage: number;
   victimHealth: number;
   killed: boolean;
+  headshot: boolean;
   point: Vec3;
+}
+
+/** A turret fired a shot — purely for client tracer/muzzle VFX. */
+export interface TurretFireEvent {
+  id: number;
+  from: Vec3;
+  to: Vec3;
 }
 
 /** A kill, for the kill feed + scoreboard. */

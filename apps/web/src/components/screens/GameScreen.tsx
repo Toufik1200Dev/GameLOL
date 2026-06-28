@@ -12,6 +12,8 @@ import {
   DEFAULT_MAX_HEARTS,
   buildGridCollision,
   generateWorld,
+  scaleMapColliderData,
+  type AABB,
   type CollisionWorld,
   type MapColliderData,
   type TeamId,
@@ -83,16 +85,34 @@ export function GameScreen() {
       let worldSize: number;
 
       if (mapEntry?.model && mapEntry.colliders) {
-        // GLB map: fetch voxel colliders, render the model.
-        const data = (await (
+        // GLB map: fetch voxel colliders, apply the map's scale (render +
+        // collision together), then render the model.
+        const raw = (await (
           await fetch(mapEntry.colliders, { cache: 'no-cache' })
         ).json()) as MapColliderData;
+        const mapScale = mapEntry.config.scale ?? 1;
+        const data = scaleMapColliderData(raw, mapScale);
         const grid = buildGridCollision(data);
         const sizeX = data.bounds.max.x - data.bounds.min.x;
         const sizeZ = data.bounds.max.z - data.bounds.min.z;
         worldSize = Math.max(sizeX, sizeZ) / 2;
+
+        // Turret base colliders (fixed real-world size, like the server) so client
+        // prediction collides with turrets identically — no rubber-banding.
+        const turretEntry = manifest.turrets?.[0] ?? null;
+        const colliders: AABB[] = [...(data.colliders ?? [])];
+        if (turretEntry && data.turrets) {
+          const cs = turretEntry.config.colliderSize;
+          for (const t of data.turrets) {
+            colliders.push({
+              min: { x: t.x - cs.x / 2, y: t.y, z: t.z - cs.z / 2 },
+              max: { x: t.x + cs.x / 2, y: t.y + cs.y, z: t.z + cs.z / 2 },
+            });
+          }
+        }
+
         collision = {
-          colliders: data.colliders ?? [],
+          colliders,
           grid,
           groundY: data.groundY,
           bounds: 0,
@@ -108,8 +128,10 @@ export function GameScreen() {
           collision,
           proceduralWorld: null,
           mapModelUrl: mapEntry.model,
-          mapModelOffsetY: mapEntry.config.modelOffsetY ?? 0,
+          mapModelOffsetY: (mapEntry.config.modelOffsetY ?? 0) * mapScale,
+          mapScale,
           props: data.props ?? [],
+          turret: turretEntry,
           skyColor: mapEntry.config.skyColor,
           fogColor: mapEntry.config.fogColor,
           groundColor: '#5fae54',
@@ -127,7 +149,9 @@ export function GameScreen() {
           proceduralWorld: world,
           mapModelUrl: null,
           mapModelOffsetY: 0,
+          mapScale: 1,
           props: [],
+          turret: null,
           skyColor: world.skyColor,
           fogColor: world.fogColor,
           groundColor: world.groundColor,
@@ -165,7 +189,7 @@ export function GameScreen() {
     const onSnapshot = setup.client.onSnapshot.bind(setup.client);
     socket.on('game:snapshot', onSnapshot);
     socket.on('game:hit', (e) => {
-      if (e.shooterId === playerId) useGameStore.getState().markHit();
+      if (e.shooterId === playerId) useGameStore.getState().markHit(e.headshot);
       if (e.victimId === playerId) useGameStore.getState().markDamage();
     });
     socket.on('game:kill', (e) => {

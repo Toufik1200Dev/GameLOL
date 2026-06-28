@@ -48,6 +48,10 @@ const WeaponSelectScreen = dynamic(
   () => withChunkRetry(import('./screens/WeaponSelectScreen').then((m) => m.WeaponSelectScreen)),
   { ssr: false, loading: () => <LoadingScreen /> },
 );
+const MapSelectScreen = dynamic(
+  () => withChunkRetry(import('./screens/MapSelectScreen').then((m) => m.MapSelectScreen)),
+  { ssr: false, loading: () => <LoadingScreen /> },
+);
 const GameScreen = dynamic(
   () => withChunkRetry(import('./screens/GameScreen').then((m) => m.GameScreen)),
   { ssr: false, loading: () => <LoadingScreen /> },
@@ -59,6 +63,7 @@ const SCREENS: Record<Screen, React.ComponentType> = {
   lobby: LobbyScreen,
   characterSelect: CharacterSelectScreen,
   weaponSelect: WeaponSelectScreen,
+  mapSelect: MapSelectScreen,
   game: GameScreen,
 };
 

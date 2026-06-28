@@ -21,6 +21,7 @@ import {
   type CollisionWorld,
   type GeneratedWorld,
   type PropInstance,
+  type TurretManifestEntry,
 } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
@@ -32,6 +33,7 @@ import { World } from './World';
 import { MapModel } from './MapModel';
 import { MapProps } from './MapProps';
 import { Players } from './Players';
+import { Turrets } from './Turrets';
 import { WeaponModel } from './CharacterModel';
 
 /** Everything the scene needs to render + collide, for procedural OR GLB maps. */
@@ -40,7 +42,11 @@ export interface SceneInfo {
   proceduralWorld: GeneratedWorld | null;
   mapModelUrl: string | null;
   mapModelOffsetY: number;
+  /** Uniform map scale applied to render + collision. */
+  mapScale: number;
   props: PropInstance[];
+  /** Turret asset (model + config) for rendering team turrets, if any. */
+  turret: TurretManifestEntry | null;
   skyColor: string;
   fogColor: string;
   groundColor: string;
@@ -314,11 +320,21 @@ interface ActiveExplosion {
 }
 const PROJECTILE_LIFE = 6000;
 const EXPLOSION_LIFE = 500;
+const TURRET_TRACER_LIFE = 90;
 
-/** Renders travelling projectiles + explosion flashes from server combat events. */
+interface TurretShot {
+  key: number;
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  born: number;
+}
+
+/** Renders travelling projectiles + explosion flashes + turret tracers from server combat events. */
 function CombatVFX() {
   const projectiles = useRef<Map<number, ActiveProjectile>>(new Map());
   const explosions = useRef<ActiveExplosion[]>([]);
+  const turretShots = useRef<TurretShot[]>([]);
+  const shotKey = useRef(0);
   const prevHad = useRef(false);
   const [, force] = useState(0);
 
@@ -351,11 +367,26 @@ function CombatVFX() {
         born: performance.now(),
       });
     };
+    const onTurretFire = (e: {
+      id: number;
+      from: { x: number; y: number; z: number };
+      to: { x: number; y: number; z: number };
+    }) => {
+      turretShots.current.push({
+        key: ++shotKey.current,
+        start: new THREE.Vector3(e.from.x, e.from.y, e.from.z),
+        end: new THREE.Vector3(e.to.x, e.to.y, e.to.z),
+        born: performance.now(),
+      });
+      if (turretShots.current.length > 32) turretShots.current.shift();
+    };
     socket.on('game:projectile', onProjectile);
     socket.on('game:explosion', onExplosion);
+    socket.on('game:turretFire', onTurretFire);
     return () => {
       socket.off('game:projectile', onProjectile);
       socket.off('game:explosion', onExplosion);
+      socket.off('game:turretFire', onTurretFire);
     };
   }, []);
 
@@ -369,13 +400,32 @@ function CombatVFX() {
     if (explosions.current.length) {
       explosions.current = explosions.current.filter((e) => now - e.born < EXPLOSION_LIFE);
     }
-    const has = projectiles.current.size > 0 || explosions.current.length > 0;
+    if (turretShots.current.length) {
+      turretShots.current = turretShots.current.filter((t) => now - t.born < TURRET_TRACER_LIFE);
+    }
+    const has =
+      projectiles.current.size > 0 ||
+      explosions.current.length > 0 ||
+      turretShots.current.length > 0;
     if (has || prevHad.current) force((n) => n + 1);
     prevHad.current = has;
   });
 
   return (
     <group>
+      {turretShots.current.map((t) => {
+        const age = (performance.now() - t.born) / TURRET_TRACER_LIFE;
+        return (
+          <Line
+            key={t.key}
+            points={[t.start, t.end]}
+            color="#ff7a4d"
+            lineWidth={2}
+            transparent
+            opacity={Math.max(0, 1 - age)}
+          />
+        );
+      })}
       {[...projectiles.current.values()].map((p) => (
         <mesh key={p.id} position={p.pos}>
           <sphereGeometry args={[0.18, 10, 10]} />
@@ -488,9 +538,13 @@ export function GameScene({
             url={scene.mapModelUrl}
             offsetY={scene.mapModelOffsetY}
             groundY={scene.collision.groundY}
+            scale={scene.mapScale}
           />
         ) : null}
-        {scene.props.length > 0 && <MapProps props={scene.props} offsetY={scene.mapModelOffsetY} />}
+        {scene.props.length > 0 && (
+          <MapProps props={scene.props} offsetY={scene.mapModelOffsetY} scale={scene.mapScale} />
+        )}
+        {scene.turret && <Turrets entry={scene.turret} />}
         <Players client={client} controls={controls} />
         <FirstPersonViewmodel client={client} controls={controls} />
       </Suspense>
