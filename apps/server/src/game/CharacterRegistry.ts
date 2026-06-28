@@ -1,7 +1,8 @@
 /**
- * Lists available character ids from disk (folders with a model.glb). Used to
- * assign a default character to players who start a match without picking one,
- * so an avatar always renders.
+ * Lists available character ids from disk (folders with a config.json). Used to
+ * assign a default character to players who start a match without picking one, so
+ * an avatar always renders. We key off config.json (not model.glb) because the
+ * server image ships only the JSON configs, not the large GLB binaries.
  */
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -12,6 +13,6 @@ export function listCharacterIds(): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir).filter((id) => {
     const folder = join(dir, id);
-    return statSync(folder).isDirectory() && existsSync(join(folder, 'model.glb'));
+    return statSync(folder).isDirectory() && existsSync(join(folder, 'config.json'));
   });
 }
