@@ -32,13 +32,25 @@ RUN pnpm --filter @game/server build
 # Produce a self-contained, production-only deployment of the server.
 RUN pnpm --filter @game/server deploy --prod /prod
 
+# Bundle ONLY the JSON the server reads at runtime (map colliders + map/weapon/
+# turret configs). The large GLB binaries are never opened by the server, so we
+# strip them — but the colliders MUST ship so the authoritative sim's collision
+# (and turret spawns) match the GLB maps the client renders. Without this the
+# server falls back to a procedural world and players spawn under the GLB floor.
+COPY apps/web/public/assets /assets-full
+RUN mkdir -p /assets && cd /assets-full && \
+    find . -name '*.json' -exec sh -c 'mkdir -p "/assets/$(dirname "$1")" && cp "$1" "/assets/$1"' _ {} \;
+
 # ---- Runtime stage -----------------------------------------------------------
 FROM node:20-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=4000
+# Where the server reads authoritative map colliders + asset configs from.
+ENV ASSETS_DIR=/app/assets
 
 COPY --from=build /prod ./
+COPY --from=build /assets ./assets
 
 EXPOSE 4000
 CMD ["node", "dist/index.js"]
