@@ -9,7 +9,7 @@ import { useMemo } from 'react';
 import { Clone, useGLTF } from '@react-three/drei';
 import type { PropInstance } from '@game/shared';
 
-function PropGroup({ model, items }: { model: string; items: PropInstance[] }) {
+function PropGroup({ model, items, offsetY }: { model: string; items: PropInstance[]; offsetY: number }) {
   const { scene } = useGLTF(model);
   return (
     <>
@@ -17,7 +17,7 @@ function PropGroup({ model, items }: { model: string; items: PropInstance[] }) {
         <Clone
           key={i}
           object={scene}
-          position={[p.x, p.y, p.z]}
+          position={[p.x, p.y + offsetY, p.z]}
           rotation={[0, p.rotationY, 0]}
         />
       ))}
@@ -25,7 +25,7 @@ function PropGroup({ model, items }: { model: string; items: PropInstance[] }) {
   );
 }
 
-export function MapProps({ props }: { props: PropInstance[] }) {
+export function MapProps({ props, offsetY }: { props: PropInstance[]; offsetY: number }) {
   const groups = useMemo(() => {
     const byModel = new Map<string, PropInstance[]>();
     for (const p of props) {
@@ -38,7 +38,7 @@ export function MapProps({ props }: { props: PropInstance[] }) {
   return (
     <>
       {groups.map(([model, items]) => (
-        <PropGroup key={model} model={model} items={items} />
+        <PropGroup key={model} model={model} items={items} offsetY={offsetY} />
       ))}
     </>
   );

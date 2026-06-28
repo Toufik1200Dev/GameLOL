@@ -1,0 +1,9 @@
+{
+  "name": "Geonosis Arena",
+  "description": "Open execution arena.",
+  "skyColor": "#caa46a",
+  "fogColor": "#b98f57",
+  "propDensity": 0,
+  "modelOffsetY": 0.35,
+  "props": [{ "id": "bmw-m4", "count": 16 }]
+}

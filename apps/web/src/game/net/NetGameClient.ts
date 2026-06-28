@@ -105,8 +105,13 @@ export class NetGameClient {
     this.socket = socket;
     this.selfId = selfId;
     this.world = world;
-    this.predicted = createMoveState(spawn);
-    this.render = createMoveState(spawn);
+    const initialSpawn = {
+      x: spawn.x,
+      y: Math.max(spawn.y, world.groundY),
+      z: spawn.z,
+    };
+    this.predicted = createMoveState(initialSpawn);
+    this.render = createMoveState(initialSpawn);
   }
 
   // ---- per-frame: sample input, predict, send ----

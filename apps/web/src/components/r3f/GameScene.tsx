@@ -484,9 +484,13 @@ export function GameScene({
         {scene.proceduralWorld ? (
           <World world={scene.proceduralWorld} />
         ) : scene.mapModelUrl ? (
-          <MapModel url={scene.mapModelUrl} offsetY={scene.mapModelOffsetY} />
+          <MapModel
+            url={scene.mapModelUrl}
+            offsetY={scene.mapModelOffsetY}
+            groundY={scene.collision.groundY}
+          />
         ) : null}
-        {scene.props.length > 0 && <MapProps props={scene.props} />}
+        {scene.props.length > 0 && <MapProps props={scene.props} offsetY={scene.mapModelOffsetY} />}
         <Players client={client} controls={controls} />
         <FirstPersonViewmodel client={client} controls={controls} />
       </Suspense>

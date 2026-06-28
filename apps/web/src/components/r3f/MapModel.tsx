@@ -6,12 +6,25 @@
  * casting from 1M+ triangles every frame would tank performance; player shadows
  * are enough).
  */
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { Mesh } from 'three';
+import { Box3, type Mesh } from 'three';
 
-export function MapModel({ url, offsetY = 0 }: { url: string; offsetY?: number }) {
+export function MapModel({
+  url,
+  offsetY = 0,
+  groundY,
+}: {
+  url: string;
+  offsetY?: number;
+  groundY: number;
+}) {
   const { scene } = useGLTF(url);
+
+  const renderOffsetY = useMemo(() => {
+    const bounds = new Box3().setFromObject(scene);
+    return offsetY + (groundY - bounds.min.y);
+  }, [scene, offsetY, groundY]);
 
   useEffect(() => {
     scene.traverse((o) => {
@@ -23,7 +36,8 @@ export function MapModel({ url, offsetY = 0 }: { url: string; offsetY?: number }
     });
   }, [scene]);
 
-  // Visual-only vertical offset (collision uses the unshifted GLB). Lets a map
-  // sit lower so players rest on the floor instead of appearing sunk into it.
-  return <primitive object={scene} position={[0, offsetY, 0]} />;
+  // Visual-only vertical offset (collision uses the unshifted GLB plus optional
+  // config tuning). The scene is raised so its minimum Y aligns with the
+  // authoritative collision groundY.
+  return <primitive object={scene} position={[0, renderOffsetY, 0]} />;
 }

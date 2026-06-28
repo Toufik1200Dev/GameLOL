@@ -552,7 +552,12 @@ export class GameInstance {
     const idx = this.spawnCursor[player.team] % spawns.length;
     this.spawnCursor[player.team] += 1;
     const spawn = spawns[idx]!;
-    player.move = createMoveState({ ...spawn.position }, spawn.yaw);
+    const spawnPosition = {
+      x: spawn.position.x,
+      y: Math.max(spawn.position.y, this.groundY),
+      z: spawn.position.z,
+    };
+    player.move = createMoveState(spawnPosition, spawn.yaw);
     player.health = DEFAULT_MAX_HEARTS;
     player.alive = true;
     player.respawnTimer = 0;
