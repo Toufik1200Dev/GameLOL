@@ -76,7 +76,9 @@ interface RemoteEntity {
 
 const fromNet = (p: NetPlayerState): MoveState => ({
   position: { x: p.x, y: p.y, z: p.z },
-  velocity: { x: 0, y: p.vy, z: 0 },
+  // Keep the authoritative horizontal velocity so server knockback carries through
+  // reconciliation instead of being zeroed (smooth shove instead of a snap-back).
+  velocity: { x: p.vx, y: p.vy, z: p.vz },
   yaw: p.yaw,
   pitch: p.pitch,
   onGround: p.onGround,
@@ -92,6 +94,8 @@ export class NetGameClient {
   predicted: MoveState;
   /** Smoothed render state (drives camera + mesh) to hide reconciliation pops. */
   render: MoveState;
+  /** Timestamp (performance.now) of the local player's last shot — drives fire VFX/anim. */
+  lastFireAt = 0;
 
   private seq = 0;
   private pending: PlayerInput[] = [];
@@ -268,6 +272,7 @@ export class NetGameClient {
   // ---- shooting ----
 
   shoot(origin: Vec3, dir: Vec3): void {
+    this.lastFireAt = performance.now();
     this.socket.emit('game:shoot', {
       seq: this.seq,
       origin,

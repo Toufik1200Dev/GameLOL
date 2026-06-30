@@ -468,6 +468,7 @@ function FirstPersonViewmodel({
 }) {
   const camera = useThree((s) => s.camera);
   const ref = useRef<THREE.Group>(null);
+  const fireRef = useRef(0);
   const manifest = useAssetStore((s) => s.manifest);
   const weaponId = useGameStore(
     (s) => s.roster.find((p) => p.id === client.selfId)?.weaponId ?? null,
@@ -476,6 +477,7 @@ function FirstPersonViewmodel({
 
   useFrame(() => {
     const g = ref.current;
+    fireRef.current = client.lastFireAt;
     if (!g) return;
     g.visible = controls.firstPerson && Boolean(weapon);
     if (!g.visible) return;
@@ -489,7 +491,7 @@ function FirstPersonViewmodel({
   if (!weapon) return null;
   return (
     <group ref={ref}>
-      <WeaponModel url={weapon.model} config={weapon.config} />
+      <WeaponModel url={weapon.model} config={weapon.config} fireRef={fireRef} />
     </group>
   );
 }

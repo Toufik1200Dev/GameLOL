@@ -17,7 +17,7 @@ import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
 import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
-import { CharacterModel, WeaponModel } from './CharacterModel';
+import { CharacterModel, WeaponModel, type FireRef } from './CharacterModel';
 
 const TEAM_COLOR: Record<TeamId, string> = { red: '#ff4d5e', blue: '#4c8bff' };
 
@@ -47,11 +47,13 @@ function CharacterAvatar({
   characterId,
   weaponId,
   isMoving,
+  fireRef,
 }: {
   team: TeamId;
   characterId: string | null;
   weaponId: string | null;
   isMoving?: () => boolean;
+  fireRef?: FireRef;
 }) {
   const manifest = useAssetStore((s) => s.manifest);
   const character = useMemo(
@@ -72,13 +74,14 @@ function CharacterAvatar({
           config={character.config}
           fallback={<CapsuleAvatar team={team} />}
           isMoving={isMoving}
+          fireRef={fireRef}
         />
       ) : (
         <CapsuleAvatar team={team} />
       )}
       {weapon && (
         <group position={HAND_ANCHOR}>
-          <WeaponModel url={weapon.model} config={weapon.config} />
+          <WeaponModel url={weapon.model} config={weapon.config} fireRef={fireRef} />
         </group>
       )}
     </>
@@ -100,11 +103,13 @@ function NameTag({ name, team }: { name: string; team: TeamId }) {
 
 function LocalPlayer({ client, controls }: { client: NetGameClient; controls: ControlsRef }) {
   const ref = useRef<Group>(null);
+  const fireRef = useRef(0);
   const self = useGameStore((s) => s.roster.find((p) => p.id === client.selfId));
   const team = self?.team ?? 'red';
 
   useFrame((_s, dt) => {
     const g = ref.current;
+    fireRef.current = client.lastFireAt; // mirror the local shot timestamp
     if (!g) return;
     g.visible = !controls.firstPerson;
     g.position.set(client.render.position.x, client.render.position.y, client.render.position.z);
@@ -128,6 +133,7 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
           const v = client.predicted.velocity;
           return Math.hypot(v.x, v.z) > 1.2;
         }}
+        fireRef={fireRef}
       />
     </group>
   );
@@ -136,11 +142,17 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
 function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
   const ref = useRef<Group>(null);
   const last = useRef<{ x: number; z: number } | null>(null);
+  const fireRef = useRef(0);
+  const wasFiring = useRef(false);
   const meta = useGameStore((s) => s.roster.find((p) => p.id === id));
 
   useFrame((_s, dt) => {
     const g = ref.current;
     if (!g) return;
+    // Trigger the attack animation on the firing rising-edge from snapshots.
+    const firing = useGameStore.getState().roster.find((p) => p.id === id)?.firing ?? false;
+    if (firing && !wasFiring.current) fireRef.current = performance.now();
+    wasFiring.current = firing;
     const s = client.sampleRemote(id);
     if (!s || !s.alive) {
       g.visible = false;
@@ -170,6 +182,7 @@ function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
         characterId={meta?.characterId ?? null}
         weaponId={meta?.weaponId ?? null}
         isMoving={() => useGameStore.getState().roster.find((p) => p.id === id)?.moving ?? false}
+        fireRef={fireRef}
       />
       {meta && <NameTag name={meta.name} team={team} />}
     </group>

@@ -94,6 +94,7 @@ interface ServerProjectile {
   splashRadius: number;
   range: number;
   traveled: number;
+  knockback: number;
 }
 
 interface ResolvedWeapon {
@@ -102,6 +103,8 @@ interface ResolvedWeapon {
   range: number;
   projectileSpeed: number;
   splashRadius: number;
+  knockback: number;
+  melee: boolean;
 }
 
 /** A live, authoritative combat turret instantiated from a map's turret spawns. */
@@ -128,6 +131,13 @@ interface Attacker {
   name: string;
   team: TeamId;
   player: ServerPlayer | null;
+}
+
+/** A knockback impulse to push a victim along `dir`. */
+interface Knockback {
+  dir: Vec3;
+  force: number;
+  melee: boolean;
 }
 
 const MAX_QUEUE = 64;
@@ -347,6 +357,8 @@ export class GameInstance {
         range: cfg.range,
         projectileSpeed: cfg.projectileSpeed,
         splashRadius: cfg.splashRadius,
+        knockback: cfg.knockback,
+        melee: cfg.melee,
       };
     }
     return {
@@ -355,7 +367,22 @@ export class GameInstance {
       range: DEFAULT_WEAPON.range,
       projectileSpeed: 0,
       splashRadius: 0,
+      knockback: 2.5,
+      melee: false,
     };
+  }
+
+  /** Push a victim along `dir` (small for bullets, strong + a pop for melee). */
+  private applyKnockback(victim: ServerPlayer, dir: Vec3, force: number, melee: boolean): void {
+    if (force <= 0) return;
+    const h = Math.hypot(dir.x, dir.z) || 1;
+    victim.move.velocity.x += (dir.x / h) * force;
+    victim.move.velocity.z += (dir.z / h) * force;
+    if (melee) {
+      // A sword hit pops them off the ground so the shove carries (air friction is low).
+      victim.move.velocity.y = Math.max(victim.move.velocity.y, 3.2);
+      victim.move.onGround = false;
+    }
   }
 
   handleShoot(id: string, cmd: ShootCommand): void {
@@ -389,6 +416,7 @@ export class GameInstance {
         splashRadius: weapon.splashRadius,
         range: weapon.range,
         traveled: 0,
+        knockback: weapon.knockback,
       };
       this.projectiles.push(projectile);
       this.io.to(this.code).emit('game:projectile', {
@@ -444,7 +472,11 @@ export class GameInstance {
     };
     if (victim) {
       const dmg = headshot ? weapon.damage * HEADSHOT_MULTIPLIER : weapon.damage;
-      this.applyDamage(shooter, victim, dmg, point, headshot);
+      this.applyDamage(shooter, victim, dmg, point, headshot, {
+        dir,
+        force: weapon.knockback,
+        melee: weapon.melee,
+      });
     } else if (victimTurret) {
       this.damageTurret(shooter, victimTurret, weapon.damage, point);
     }
@@ -457,6 +489,7 @@ export class GameInstance {
     amount: number,
     point: Vec3,
     headshot = false,
+    knock?: Knockback,
   ): void {
     this.damagePlayer(
       { id: shooter.id, name: shooter.name, team: shooter.team, player: shooter },
@@ -464,6 +497,7 @@ export class GameInstance {
       amount,
       point,
       headshot,
+      knock,
     );
   }
 
@@ -474,8 +508,10 @@ export class GameInstance {
     amount: number,
     point: Vec3,
     headshot: boolean,
+    knock?: Knockback,
   ): void {
     if (!victim.alive || Date.now() < victim.invulnUntil) return;
+    if (knock) this.applyKnockback(victim, knock.dir, knock.force, knock.melee);
     victim.health -= amount;
     const killed = victim.health <= 0;
     const payload = {
@@ -562,7 +598,13 @@ export class GameInstance {
         const dist = Math.hypot(cx - point.x, cy - point.y, cz - point.z);
         if (dist <= p.splashRadius) {
           const dmg = Math.max(1, Math.round(p.damage * (1 - dist / p.splashRadius)));
-          this.applyDamage(owner, other, dmg, point);
+          // Blow them away from the blast (radially), strongest at the centre.
+          const falloff = 1 - dist / p.splashRadius;
+          this.applyDamage(owner, other, dmg, point, false, {
+            dir: { x: cx - point.x, y: 0, z: cz - point.z },
+            force: p.knockback * 1.5 * falloff,
+            melee: false,
+          });
         }
       }
       for (const tr of this.turrets) {
@@ -577,7 +619,11 @@ export class GameInstance {
         }
       }
     } else if (directVictim) {
-      this.applyDamage(owner, directVictim, p.damage, point);
+      this.applyDamage(owner, directVictim, p.damage, point, false, {
+        dir: p.dir,
+        force: p.knockback,
+        melee: false,
+      });
     } else if (directTurret) {
       this.damageTurret(owner, directTurret, p.damage, point);
     }
@@ -841,6 +887,7 @@ export class GameInstance {
         dmg,
         to,
         hit.headshot,
+        { dir, force: 2, melee: false },
       );
     }
   }
@@ -910,8 +957,11 @@ export class GameInstance {
       z: p.move.position.z,
       yaw: p.move.yaw,
       pitch: p.move.pitch,
+      vx: p.move.velocity.x,
       vy: p.move.velocity.y,
+      vz: p.move.velocity.z,
       moving: p.moving,
+      firing: Date.now() - p.lastFireTime < 130,
       crouching: p.move.crouching,
       onGround: p.move.onGround,
       health: Math.max(0, p.health),
@@ -943,7 +993,7 @@ export class GameInstance {
   /** Compact rounded signature used to detect whether a player changed. */
   private signature(s: NetPlayerState): string {
     const r = (n: number) => Math.round(n * 100) / 100;
-    return `${r(s.x)},${r(s.y)},${r(s.z)},${r(s.yaw)},${r(s.pitch)},${s.moving ? 1 : 0},${s.crouching ? 1 : 0},${s.onGround ? 1 : 0},${s.health},${s.alive ? 1 : 0},${s.kills},${s.deaths},${Math.ceil(s.respawnIn)}`;
+    return `${r(s.x)},${r(s.y)},${r(s.z)},${r(s.yaw)},${r(s.pitch)},${r(s.vx)},${r(s.vz)},${s.moving ? 1 : 0},${s.firing ? 1 : 0},${s.crouching ? 1 : 0},${s.onGround ? 1 : 0},${s.health},${s.alive ? 1 : 0},${s.kills},${s.deaths},${Math.ceil(s.respawnIn)}`;
   }
 
   private broadcast(): void {

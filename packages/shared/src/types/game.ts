@@ -16,8 +16,13 @@ export interface NetPlayerState {
   z: number;
   yaw: number;
   pitch: number;
+  /** Horizontal velocity, networked so server knockback reconciles smoothly. */
+  vx: number;
   vy: number;
+  vz: number;
   moving: boolean;
+  /** True for a brief window after the player fired (drives the attack animation). */
+  firing: boolean;
   crouching: boolean;
   onGround: boolean;
   // Combat / status

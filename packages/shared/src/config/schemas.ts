@@ -79,6 +79,10 @@ export const weaponConfigSchema = z.object({
   recoil: z.number().nonnegative().default(0.3),
   spread: z.number().nonnegative().default(0.02),
   range: z.number().positive().default(80),
+  /** Horizontal impulse (m/s) applied to a victim on hit. */
+  knockback: z.number().nonnegative().default(2.5),
+  /** Melee weapon: client plays a sword-style swing instead of a recoil. */
+  melee: z.boolean().default(false),
   attachment: attachmentSchema,
 });
 
