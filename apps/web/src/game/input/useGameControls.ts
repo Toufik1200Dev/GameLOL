@@ -3,7 +3,7 @@
 /**
  * Captures keyboard + pointer-lock mouse input into a single mutable ref the
  * game loop reads each frame (no React re-renders on input). Also wires
- * scoreboard (Tab), pause (Esc / pointer-unlock) and first-person toggle (V).
+ * scoreboard (Tab), pause (Esc / pointer-unlock) and first-person toggle (V or P).
  */
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import { clamp } from '@game/shared';
@@ -60,7 +60,8 @@ export function useGameControls(initialYaw: number): MutableRefObject<ControlsRe
         e.preventDefault();
         useGameStore.getState().setScoreboard(true);
       }
-      if (e.code === 'KeyV') ref.current.firstPerson = !ref.current.firstPerson;
+      if (e.code === 'KeyV' || e.code === 'KeyP')
+        ref.current.firstPerson = !ref.current.firstPerson;
       recompute();
     };
     const onKeyUp = (e: KeyboardEvent): void => {

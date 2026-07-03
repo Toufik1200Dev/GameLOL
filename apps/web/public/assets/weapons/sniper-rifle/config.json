@@ -1,0 +1,14 @@
+{
+  "name": "Sniper Rifle",
+  "description": "High-powered bolt-action — huge damage, long range, slow fire.",
+  "damage": 6,
+  "fireRate": 45,
+  "magazine": 5,
+  "reloadSpeed": 3.4,
+  "projectileSpeed": 0,
+  "recoil": 1.2,
+  "spread": 0,
+  "range": 200,
+  "knockback": 5,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+}

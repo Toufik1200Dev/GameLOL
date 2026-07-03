@@ -17,7 +17,7 @@ import { Component, Suspense, useMemo, useRef, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useAnimations, useGLTF } from '@react-three/drei';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { Box3, LoopOnce, Vector3, type Group, type Object3D } from 'three';
+import { AdditiveBlending, Box3, DoubleSide, LoopOnce, Vector3, type Group, type Object3D } from 'three';
 import { PLAYER_HEIGHT, type CharacterConfig, type WeaponConfig } from '@game/shared';
 
 /** A ref holding the timestamp (performance.now) of the entity's last shot. */
@@ -214,14 +214,31 @@ function WeaponModelInner({
   // Procedural fire motion (pivots around the hand): a sword swing for melee,
   // a short recoil kick for guns. Driven by the fireRef timestamp.
   const animRef = useRef<Group>(null);
+  const muzzleRef = useRef<Group>(null);
   const lastFire = useRef(0);
   const fireT = useRef(-1); // seconds since the shot; <0 = at rest
+  // Muzzle sits just past the barrel tip (guns point -Z in the hand frame).
+  const muzzleZ = -(TARGET_WEAPON_LENGTH * a.scale) * 0.5 - 0.05;
   useFrame((_state, dt) => {
     const g = animRef.current;
     if (!g) return;
     if (fireRef && fireRef.current !== lastFire.current) {
       lastFire.current = fireRef.current;
       fireT.current = 0;
+    }
+    // Muzzle flash: bright for the first ~50 ms after firing (guns only).
+    const mg = muzzleRef.current;
+    if (mg) {
+      const flash = !config.melee && fireT.current >= 0 ? Math.max(0, 1 - fireT.current / 0.05) : 0;
+      mg.visible = flash > 0.02;
+      if (mg.visible) {
+        mg.scale.setScalar(0.6 + flash * 0.9);
+        mg.rotation.z = Math.random() * Math.PI; // flicker the star
+        mg.traverse((o) => {
+          const m = (o as unknown as { material?: { opacity: number } }).material;
+          if (m) m.opacity = flash;
+        });
+      }
     }
     if (fireT.current < 0) return;
     fireT.current += dt;
@@ -259,6 +276,46 @@ function WeaponModelInner({
           <primitive object={cloned} />
         </group>
       </group>
+      {/* Muzzle flash (guns only); toggled + scaled per frame by the fire logic. */}
+      {!config.melee && (
+        <group ref={muzzleRef} position={[0, 0, muzzleZ]} visible={false}>
+          <mesh>
+            <sphereGeometry args={[0.07, 8, 8]} />
+            <meshBasicMaterial
+              color="#fff2c0"
+              transparent
+              opacity={0}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh>
+            <planeGeometry args={[0.5, 0.1]} />
+            <meshBasicMaterial
+              color="#ffcf6e"
+              transparent
+              opacity={0}
+              side={DoubleSide}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh rotation={[0, 0, Math.PI / 2]}>
+            <planeGeometry args={[0.5, 0.1]} />
+            <meshBasicMaterial
+              color="#ffcf6e"
+              transparent
+              opacity={0}
+              side={DoubleSide}
+              blending={AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+      )}
     </group>
   );
 }

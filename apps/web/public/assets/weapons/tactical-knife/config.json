@@ -8,8 +8,8 @@
   "projectileSpeed": 0,
   "recoil": 0.1,
   "spread": 0,
-  "range": 3.5,
+  "range": 3.8,
   "knockback": 9,
   "melee": true,
-  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.9 }
 }

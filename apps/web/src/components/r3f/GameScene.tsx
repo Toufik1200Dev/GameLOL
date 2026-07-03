@@ -35,6 +35,7 @@ import { MapProps } from './MapProps';
 import { Players } from './Players';
 import { Turrets } from './Turrets';
 import { WeaponModel } from './CharacterModel';
+import { playSfx, weaponFireSfx } from '../../game/audio/sfx';
 
 /** Everything the scene needs to render + collide, for procedural OR GLB maps. */
 export interface SceneInfo {
@@ -54,7 +55,7 @@ export interface SceneInfo {
   glb: boolean;
 }
 
-interface Tracer {
+export interface Tracer {
   id: number;
   start: THREE.Vector3;
   end: THREE.Vector3;
@@ -267,6 +268,7 @@ function GameLoop({
     if (!store.reloading && (c.reload || store.ammo <= 0) && store.ammo < store.magazine && alive) {
       store.setHud({ reloading: true });
       reloadUntil.current = now + reloadMs;
+      playSfx('reload');
     }
     if (
       c.shoot &&
@@ -280,6 +282,7 @@ function GameLoop({
       store.setHud({ ammo: store.ammo - 1 });
       const origin = { x: head.x, y: head.y, z: head.z };
       client.shoot(origin, { x: dir.x, y: dir.y, z: dir.z });
+      playSfx(weapon ? weaponFireSfx(weapon) : 'gun');
       // Hitscan weapons draw a tracer; projectile weapons are rendered from the
       // server's projectile event (see CombatVFX).
       if (!isProjectile) {
@@ -366,6 +369,7 @@ function CombatVFX() {
         radius: e.radius,
         born: performance.now(),
       });
+      playSfx('explosion');
     };
     const onTurretFire = (e: {
       id: number;
@@ -449,6 +453,94 @@ function CombatVFX() {
               emissiveIntensity={2}
               transparent
               opacity={Math.max(0, 1 - age)}
+              toneMapped={false}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+interface HitBurst {
+  id: number;
+  pos: THREE.Vector3;
+  born: number;
+  melee: boolean;
+}
+const HIT_LIFE = 220; // ms (bullet spark)
+const SLASH_LIFE = 320; // ms (melee slash arc)
+
+/** Bullet-spark / melee-slash impact bursts + impact SFX, from server `game:hit`. */
+function HitVFX() {
+  const bursts = useRef<HitBurst[]>([]);
+  const idRef = useRef(0);
+  const prevHad = useRef(false);
+  const [, force] = useState(0);
+
+  useEffect(() => {
+    const socket = getSocket();
+    const onHit = (e: { point: { x: number; y: number; z: number }; melee?: boolean }) => {
+      const melee = Boolean(e.melee);
+      bursts.current.push({
+        id: ++idRef.current,
+        pos: new THREE.Vector3(e.point.x, e.point.y, e.point.z),
+        born: performance.now(),
+        melee,
+      });
+      if (bursts.current.length > 32) bursts.current.shift();
+      playSfx(melee ? 'impactMelee' : 'impactBullet');
+    };
+    socket.on('game:hit', onHit);
+    return () => {
+      socket.off('game:hit', onHit);
+    };
+  }, []);
+
+  useFrame(() => {
+    if (bursts.current.length) {
+      const now = performance.now();
+      bursts.current = bursts.current.filter(
+        (b) => now - b.born < (b.melee ? SLASH_LIFE : HIT_LIFE),
+      );
+    }
+    const has = bursts.current.length > 0;
+    if (has || prevHad.current) force((n) => n + 1);
+    prevHad.current = has;
+  });
+
+  return (
+    <group>
+      {bursts.current.map((b) => {
+        const life = b.melee ? SLASH_LIFE : HIT_LIFE;
+        const age = (performance.now() - b.born) / life;
+        const fade = Math.max(0, 1 - age);
+        if (b.melee) {
+          const sc = 0.4 + age * 1.4;
+          return (
+            <mesh key={b.id} position={b.pos} scale={sc} rotation={[Math.PI / 2, 0, b.id]}>
+              <torusGeometry args={[0.5, 0.07, 6, 20, Math.PI * 1.25]} />
+              <meshBasicMaterial
+                color="#c46bff"
+                transparent
+                opacity={fade}
+                blending={THREE.AdditiveBlending}
+                depthWrite={false}
+                toneMapped={false}
+              />
+            </mesh>
+          );
+        }
+        const sc = 0.18 + age * 0.55;
+        return (
+          <mesh key={b.id} position={b.pos} scale={sc}>
+            <sphereGeometry args={[0.5, 8, 8]} />
+            <meshBasicMaterial
+              color="#ffd27a"
+              transparent
+              opacity={fade}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
               toneMapped={false}
             />
           </mesh>
@@ -547,12 +639,13 @@ export function GameScene({
           <MapProps props={scene.props} offsetY={scene.mapModelOffsetY} scale={scene.mapScale} />
         )}
         {scene.turret && <Turrets entry={scene.turret} />}
-        <Players client={client} controls={controls} />
+        <Players client={client} controls={controls} pool={pool} />
         <FirstPersonViewmodel client={client} controls={controls} />
       </Suspense>
       <GameLoop client={client} collision={scene.collision} controls={controls} pool={pool} />
       <Tracers pool={pool} />
       <CombatVFX />
+      <HitVFX />
     </Canvas>
   );
 }

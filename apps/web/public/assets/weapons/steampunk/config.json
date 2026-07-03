@@ -1,0 +1,15 @@
+{
+  "name": "Steampunk Cannon",
+  "description": "Exotic clockwork cannon — lobs explosive brass slugs.",
+  "damage": 4,
+  "fireRate": 80,
+  "magazine": 8,
+  "reloadSpeed": 3.0,
+  "projectileSpeed": 60,
+  "splashRadius": 2.5,
+  "recoil": 0.8,
+  "spread": 0.02,
+  "range": 120,
+  "knockback": 6,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.1 }
+}

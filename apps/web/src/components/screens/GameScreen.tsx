@@ -25,6 +25,7 @@ import { useUIStore } from '../../stores/uiStore';
 import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
 import { useGameControls } from '../../game/input/useGameControls';
+import { playSfx, primeAudio } from '../../game/audio/sfx';
 import { NetGameClient } from '../../game/net/NetGameClient';
 import { GameScene, type SceneInfo } from '../r3f/GameScene';
 import { GameErrorBoundary } from '../r3f/GameErrorBoundary';
@@ -194,7 +195,10 @@ export function GameScreen() {
     socket.on('game:snapshot', onSnapshot);
     socket.on('game:hit', (e) => {
       if (e.shooterId === playerId) useGameStore.getState().markHit(e.headshot);
-      if (e.victimId === playerId) useGameStore.getState().markDamage();
+      if (e.victimId === playerId) {
+        useGameStore.getState().markDamage();
+        playSfx('hurt');
+      }
     });
     socket.on('game:kill', (e) => {
       useGameStore.getState().pushKill({
@@ -203,6 +207,7 @@ export function GameScreen() {
         victimName: e.victimName,
         victimTeam: e.victimTeam,
       });
+      if (e.killerId === playerId) playSfx('kill');
     });
     socket.on('game:ended', (payload) => {
       useGameStore.getState().setEnded({ winner: payload.winner, scores: payload.scores });
@@ -257,13 +262,16 @@ export function GameScreen() {
       {!isTouch && !locked && !paused && !ended && (
         <div
           className="absolute inset-0 flex cursor-pointer items-center justify-center"
-          onClick={() => containerRef.current?.requestPointerLock?.()}
+          onClick={() => {
+            primeAudio(); // unlock the audio context within this user gesture
+            containerRef.current?.requestPointerLock?.();
+          }}
         >
           <Panel className="px-8 py-6 text-center">
             <p className="font-display text-2xl font-bold">Click to play</p>
             <p className="mt-2 max-w-md text-xs text-white/50">
               WASD move · Space jump · Shift sprint · C crouch · Left-click shoot · Right-click aim
-              · R reload · V camera · Tab scoreboard · Esc pause
+              · R reload · V/P camera · Tab scoreboard · Esc pause
             </p>
           </Panel>
         </div>

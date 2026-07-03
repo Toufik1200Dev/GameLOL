@@ -11,18 +11,23 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
-import type { Group } from 'three';
-import { PLAYER_HEIGHT, PLAYER_RADIUS, lerpAngle, type TeamId } from '@game/shared';
+import { Vector3, type Group } from 'three';
+import { EYE_HEIGHT, PLAYER_HEIGHT, PLAYER_RADIUS, lerpAngle, type TeamId } from '@game/shared';
 import { useGameStore } from '../../stores/gameStore';
 import { useAssetStore } from '../../stores/assetStore';
 import type { NetGameClient } from '../../game/net/NetGameClient';
 import type { ControlsRef } from '../../game/input/useGameControls';
 import { CharacterModel, WeaponModel, type FireRef } from './CharacterModel';
+import { playSfx, weaponFireSfx } from '../../game/audio/sfx';
+import type { Tracer } from './GameScene';
 
 const TEAM_COLOR: Record<TeamId, string> = { red: '#ff4d5e', blue: '#4c8bff' };
 
 /** Where the held weapon sits relative to the avatar feet (right hand, held forward). */
 const HAND_ANCHOR: [number, number, number] = [0.25, PLAYER_HEIGHT * 0.55, -0.5];
+
+/** Globally-unique ids for remote-player tracers (kept clear of local tracer ids). */
+let remoteTracerSeq = 1e7;
 
 /** Neutral capsule avatar (engine primitive; fallback when no character model). */
 function CapsuleAvatar({ team }: { team: TeamId }) {
@@ -139,7 +144,15 @@ function LocalPlayer({ client, controls }: { client: NetGameClient; controls: Co
   );
 }
 
-function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
+function RemotePlayer({
+  client,
+  id,
+  pool,
+}: {
+  client: NetGameClient;
+  id: string;
+  pool: React.MutableRefObject<Tracer[]>;
+}) {
   const ref = useRef<Group>(null);
   const last = useRef<{ x: number; z: number } | null>(null);
   const fireRef = useRef(0);
@@ -149,11 +162,38 @@ function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
   useFrame((_s, dt) => {
     const g = ref.current;
     if (!g) return;
-    // Trigger the attack animation on the firing rising-edge from snapshots.
-    const firing = useGameStore.getState().roster.find((p) => p.id === id)?.firing ?? false;
-    if (firing && !wasFiring.current) fireRef.current = performance.now();
-    wasFiring.current = firing;
     const s = client.sampleRemote(id);
+    // Trigger the attack animation + fire VFX/SFX on the firing rising-edge.
+    const firing = useGameStore.getState().roster.find((p) => p.id === id)?.firing ?? false;
+    if (firing && !wasFiring.current) {
+      fireRef.current = performance.now();
+      if (s) {
+        const weaponId = useGameStore.getState().roster.find((p) => p.id === id)?.weaponId ?? null;
+        const wcfg = weaponId
+          ? useAssetStore.getState().manifest.weapons.find((w) => w.id === weaponId)?.config
+          : undefined;
+        // Positional-ish volume: attenuate by distance from the local player.
+        const rp = client.render.position;
+        const dist = Math.hypot(s.x - rp.x, s.y - rp.y, s.z - rp.z);
+        const gain = Math.max(0.05, 1 - dist / 45);
+        playSfx(wcfg ? weaponFireSfx(wcfg) : 'gun', gain);
+        // Hitscan weapons draw a tracer along the shooter's aim (projectiles are
+        // rendered from the server event; melee has no tracer).
+        if (wcfg && !wcfg.melee && (wcfg.projectileSpeed ?? 0) === 0) {
+          const cosP = Math.cos(s.pitch);
+          const dir = new Vector3(
+            -Math.sin(s.yaw) * cosP,
+            Math.sin(s.pitch),
+            -Math.cos(s.yaw) * cosP,
+          ).normalize();
+          const start = new Vector3(s.x, s.y + EYE_HEIGHT, s.z).addScaledVector(dir, 0.6);
+          const end = new Vector3(s.x, s.y + EYE_HEIGHT, s.z).addScaledVector(dir, wcfg.range);
+          pool.current.push({ id: ++remoteTracerSeq, start, end, born: performance.now() });
+          if (pool.current.length > 48) pool.current.shift();
+        }
+      }
+    }
+    wasFiring.current = firing;
     if (!s || !s.alive) {
       g.visible = false;
       last.current = null;
@@ -189,7 +229,15 @@ function RemotePlayer({ client, id }: { client: NetGameClient; id: string }) {
   );
 }
 
-export function Players({ client, controls }: { client: NetGameClient; controls: ControlsRef }) {
+export function Players({
+  client,
+  controls,
+  pool,
+}: {
+  client: NetGameClient;
+  controls: ControlsRef;
+  pool: React.MutableRefObject<Tracer[]>;
+}) {
   // Re-render only when the set of remote ids changes (not per frame).
   const remoteIds = useGameStore((s) =>
     s.roster
@@ -203,7 +251,7 @@ export function Players({ client, controls }: { client: NetGameClient; controls:
     <>
       <LocalPlayer client={client} controls={controls} />
       {ids.map((id) => (
-        <RemotePlayer key={id} client={client} id={id} />
+        <RemotePlayer key={id} client={client} id={id} pool={pool} />
       ))}
     </>
   );

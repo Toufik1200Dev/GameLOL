@@ -1,0 +1,11 @@
+{
+  "name": "Jarvan IV",
+  "description": "The Exemplar of Demacia — armored frontline fighter.",
+  "health": 12,
+  "speed": 5.4,
+  "sprintMultiplier": 1.55,
+  "jumpHeight": 1.4,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 3.14159
+}

@@ -1,0 +1,14 @@
+{
+  "name": "Machine Gun",
+  "description": "Rapid-fire automatic — spray and pray.",
+  "damage": 2,
+  "fireRate": 640,
+  "magazine": 60,
+  "reloadSpeed": 3.2,
+  "projectileSpeed": 0,
+  "recoil": 0.5,
+  "spread": 0.05,
+  "range": 70,
+  "knockback": 3,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 1.0 }
+}

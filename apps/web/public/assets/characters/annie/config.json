@@ -1,0 +1,11 @@
+{
+  "name": "Annie",
+  "description": "The Dark Child — small, bursty mage.",
+  "health": 9,
+  "speed": 5.3,
+  "sprintMultiplier": 1.65,
+  "jumpHeight": 1.45,
+  "scale": 1,
+  "yOffset": 0,
+  "yawOffset": 3.14159
+}

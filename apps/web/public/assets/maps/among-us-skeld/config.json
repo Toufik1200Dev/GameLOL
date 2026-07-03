@@ -1,0 +1,11 @@
+{
+  "name": "The Skeld",
+  "description": "The Among Us spaceship — tight corridors and rooms.",
+  "skyColor": "#0a0e1a",
+  "fogColor": "#101626",
+  "propDensity": 0,
+  "turretsPerTeam": 0,
+  "cellSize": 0.5,
+  "modelOffsetY": 0,
+  "scale": 3
+}

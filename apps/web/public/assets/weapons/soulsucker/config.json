@@ -1,0 +1,15 @@
+{
+  "name": "Soulsucker",
+  "description": "A massive cursed greatsword — devastating, slow, short reach.",
+  "damage": 7,
+  "fireRate": 55,
+  "magazine": 999,
+  "reloadSpeed": 0.1,
+  "projectileSpeed": 0,
+  "recoil": 0.1,
+  "spread": 0,
+  "range": 2.8,
+  "knockback": 10,
+  "melee": true,
+  "attachment": { "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": 2.8 }
+}

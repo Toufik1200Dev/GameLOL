@@ -89,6 +89,8 @@ export interface HitEvent {
   killed: boolean;
   headshot: boolean;
   point: Vec3;
+  /** True when the hit came from a melee weapon (drives a slash impact VFX). */
+  melee: boolean;
 }
 
 /** A turret fired a shot — purely for client tracer/muzzle VFX. */

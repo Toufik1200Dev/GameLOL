@@ -522,6 +522,7 @@ export class GameInstance {
       killed,
       headshot,
       point,
+      melee: Boolean(knock?.melee),
     };
     if (attacker.player) this.io.to(attacker.player.id).emit('game:hit', payload);
     this.io.to(victim.id).emit('game:hit', payload);
@@ -545,6 +546,7 @@ export class GameInstance {
       killed: turret.health <= 0,
       headshot: false,
       point,
+      melee: false,
     });
     if (turret.health > 0) return;
     turret.health = 0;
