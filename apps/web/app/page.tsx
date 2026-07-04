@@ -1,10 +1,6 @@
-import { AppShell } from '@/components/AppShell';
+import { MainMenu } from '@/components/screens/MainMenu';
 
-/**
- * Single entry route. All in-app navigation (menu → lobby → game) is handled by
- * the client-side screen state machine inside <AppShell/> so the live socket
- * connection persists across transitions.
- */
+/** Home route (`/`) — the main menu. Each screen is now its own Next route. */
 export default function HomePage() {
-  return <AppShell />;
+  return <MainMenu />;
 }

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import './globals.css';
+import { ClientRoot } from '../src/components/ClientRoot';
 import { FirebaseAnalytics } from '../src/components/FirebaseAnalytics';
 
 // Fonts are self-hosted from ./fonts (committed woff2) via next/font/local, so
@@ -40,7 +41,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${inter.variable} ${rajdhani.variable}`}>
       <body>
-        <main>{children}</main>
+        <main>
+          <ClientRoot>{children}</ClientRoot>
+        </main>
         <FirebaseAnalytics />
       </body>
     </html>
