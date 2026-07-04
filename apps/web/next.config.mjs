@@ -1,3 +1,11 @@
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+// Repo root (apps/web → ../../). Pin it so Next doesn't infer the user's home
+// directory as the workspace root (a stray package-lock.json there) and crawl
+// the whole home tree during the build.
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -5,6 +13,8 @@ const nextConfig = {
   // Firebase Hosting (or any CDN). The app is a client-only SPA; the asset
   // manifest is prebuilt to /assets/manifest.json, so no server is needed.
   output: 'export',
+  // Scope file tracing to the monorepo (silences the multi-lockfile warning).
+  outputFileTracingRoot: repoRoot,
   // next/image optimization needs a server; disable it for static export.
   images: { unoptimized: true },
   // Compile the workspace shared package (TS source) directly.
