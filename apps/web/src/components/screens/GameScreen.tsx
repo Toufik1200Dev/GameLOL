@@ -140,6 +140,7 @@ export function GameScreen() {
           skyColor: mapEntry.config.skyColor,
           fogColor: mapEntry.config.fogColor,
           groundColor: '#5fae54',
+          skyImage: mapEntry.config.skyImage ?? null,
           size: worldSize,
           glb: true,
         };
@@ -160,6 +161,7 @@ export function GameScreen() {
           skyColor: world.skyColor,
           fogColor: world.fogColor,
           groundColor: world.groundColor,
+          skyImage: null,
           size: world.size,
           glb: false,
         };

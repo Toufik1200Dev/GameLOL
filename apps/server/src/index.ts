@@ -22,9 +22,16 @@ const app = express();
 app.use(cors({ origin: env.clientOrigin }));
 app.use(express.json());
 
-/** Liveness/health endpoint (used by Docker, load balancers, and quick checks). */
+/** Liveness/health endpoint (used by Docker, load balancers, and quick checks).
+ *  `commit` exposes the deployed git SHA (Render injects RENDER_GIT_COMMIT) so we
+ *  can verify the running server matches the latest push. */
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', tickRate: TICK_RATE, uptime: process.uptime() });
+  res.json({
+    status: 'ok',
+    tickRate: TICK_RATE,
+    uptime: process.uptime(),
+    commit: process.env.RENDER_GIT_COMMIT ?? process.env.GIT_COMMIT ?? 'dev',
+  });
 });
 
 app.get('/', (_req, res) => {

@@ -9,7 +9,7 @@
  */
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Line, Sky } from '@react-three/drei';
+import { Line, Sky, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import {
   CROUCH_EYE_HEIGHT,
@@ -51,6 +51,8 @@ export interface SceneInfo {
   skyColor: string;
   fogColor: string;
   groundColor: string;
+  /** Optional wraparound sky image (URL); replaces the flat sky colour. */
+  skyImage: string | null;
   size: number;
   glb: boolean;
 }
@@ -110,6 +112,23 @@ function SceneEnv({ scene }: { scene: SceneInfo }) {
         shadow-camera-bottom={-size}
       />
     </>
+  );
+}
+
+/** Wraparound image sky: a large inverted sphere that follows the camera so the
+ *  sky stays "infinite" as the player crosses the map. Replaces the flat colour. */
+function SkyDome({ url, radius }: { url: string; radius: number }) {
+  const texture = useTexture(url);
+  const ref = useRef<THREE.Mesh>(null);
+  const camera = useThree((s) => s.camera);
+  useFrame(() => {
+    if (ref.current) ref.current.position.copy(camera.position);
+  });
+  return (
+    <mesh ref={ref} renderOrder={-1}>
+      <sphereGeometry args={[radius, 40, 24]} />
+      <meshBasicMaterial map={texture} side={THREE.BackSide} fog={false} toneMapped={false} depthWrite={false} />
+    </mesh>
   );
 }
 
@@ -625,6 +644,7 @@ export function GameScene({
       <SceneEnv scene={scene} />
       {/* Asset-loading (suspending) content must sit under a Suspense boundary. */}
       <Suspense fallback={null}>
+        {scene.skyImage && <SkyDome url={scene.skyImage} radius={Math.max(300, scene.size * 4)} />}
         {scene.proceduralWorld ? (
           <World world={scene.proceduralWorld} />
         ) : scene.mapModelUrl ? (

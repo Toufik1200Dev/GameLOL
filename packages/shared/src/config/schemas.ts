@@ -97,6 +97,8 @@ export const mapConfigSchema = z.object({
   size: z.number().positive().default(120),
   fogColor: z.string().default('#9fd3ff'),
   skyColor: z.string().default('#67b6ff'),
+  /** Optional image (URL under /public) rendered as a wraparound sky dome. */
+  skyImage: z.string().optional(),
   /** 0..1 multiplier for prop scattering density. */
   propDensity: z.number().min(0).max(1).default(0.6),
   /**
